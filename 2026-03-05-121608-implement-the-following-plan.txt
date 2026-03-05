@@ -1,0 +1,566 @@
+
+╭─── Claude Code v2.1.69 ──────────────────────────────────────────────────────╮
+│                           │ Tips for getting started                         │
+│     Welcome back Tom!     │ Run /init to create a CLAUDE.md file with instr… │
+│                           │ ──────────────────────────────────────────────── │
+│          ▐▛███▜▌          │ Recent activity                                  │
+│         ▝▜█████▛▘         │ 31m ago  Implement the following plan:  # Kindl… │
+│           ▘▘ ▝▝           │ 40m ago  good morning claude                     │
+│                           │ 1h ago   We,re building an app described in @SP… │
+│   Opus 4.6 · Claude Pro   │ /resume for more                                 │
+│    ~\wrksp\claude-code    │                                                  │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ Plan to implement                                                            │
+│                                                                              │
+│ Kindle Book Import — Full Stack                                              │
+│                                                                              │
+│ Context                                                                      │
+│                                                                              │
+│ Build an in-app Kindle book import feature. User pastes text from Amazon's   │
+│ Kindle content library into a textarea, the system parses it into Book       │
+│ records, checks for duplicates (by title + authors + owner + purchaseDate),  │
+│ and inserts new / updates existing records in PostgreSQL. Hosted on Vercel.  │
+│ No auth for now.                                                             │
+│                                                                              │
+│ Steps                                                                        │
+│                                                                              │
+│ 1. Update SPEC.MD                                                            │
+│                                                                              │
+│ - Replace purchases table schema with books table schema (from books.txt)    │
+│ - Update DDL references to use 000_create_db.sql and 001_create_tables.sql   │
+│ - Update duplicate detection rule to: title + authors + owner +              │
+│ purchase_date                                                                │
+│ - Update parsing section to reference ParsedBook type instead of             │
+│ ParsedPurchase                                                               │
+│ - Update folder structure to reflect new file names                          │
+│ - Keep rest of spec intact (auth, filtering, UI, etc.)                       │
+│                                                                              │
+│ 2. Create DDL files                                                          │
+│                                                                              │
+│ - src/migrations/000_create_db.sql — CREATE DATABASE family_books;           │
+│ - src/migrations/001_create_tables.sql — books table with unique constraint  │
+│                                                                              │
+│ 3. Environment config                                                        │
+│                                                                              │
+│ - .env.local with DATABASE_URL                                               │
+│                                                                              │
+│ 4. Install dependencies — pg, @types/pg, zod                                 │
+│                                                                              │
+│ 5. DB connection — src/lib/db.ts                                             │
+│                                                                              │
+│ 6. Kindle parser — src/lib/parsing/kindle-parser.ts                          │
+│                                                                              │
+│ 7. Book queries — src/lib/queries/books.ts                                   │
+│                                                                              │
+│ 8. API route — src/app/api/import/route.ts                                   │
+│                                                                              │
+│ 9. Import page — src/app/purchases/import/page.tsx                           │
+│                                                                              │
+│ Books Table DDL                                                              │
+│                                                                              │
+│ CREATE TABLE books (                                                         │
+│     id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),           │
+│     book_type          TEXT NOT NULL,                                        │
+│     title              TEXT NOT NULL,                                        │
+│     description        TEXT,                                                 │
+│     image              TEXT NOT NULL DEFAULT                                 │
+│ 'https://via.placeholder.com/150x226/1ECBE1/ffffff',                         │
+│     owner              TEXT NOT NULL,                                        │
+│     readers            TEXT NOT NULL DEFAULT 'tverkon|0|1,dverkon|0|1',      │
+│     series             TEXT,                                                 │
+│     authors            TEXT NOT NULL,                                        │
+│     sortable_title     TEXT NOT NULL,                                        │
+│     searchable_content TEXT NOT NULL,                                        │
+│     purchase_date      TEXT NOT NULL,                                        │
+│     created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),                   │
+│     updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),                   │
+│     CONSTRAINT uq_books_duplicate UNIQUE (title, authors, owner,             │
+│ purchase_date)                                                               │
+│ );                                                                           │
+│                                                                              │
+│ Verification                                                                 │
+│                                                                              │
+│ 1. Run DDLs to create DB and tables                                          │
+│ 2. npm run dev → /purchases/import                                           │
+│ 3. Paste kindle-01.txt → Parse → verify books parsed                         │
+│ 4. Confirm Import → verify inserted                                          │
+│ 5. Paste again → verify duplicates detected                                  │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+● I'll implement the full stack Kindle book import feature. Let me start by
+  reading the key files to understand the current state.
+
+● Read 3 files (ctrl+o to expand)
+
+● Now let me check the existing project structure quickly.
+
+● Searched for 1 pattern (ctrl+o to expand)
+
+● Let me start by installing dependencies and creating all the files in
+  parallel.
+
+● Bash(cd /c/Users/tverk/wrksp/claude-code && npm install pg zod && npm install
+      -D @types/pg)
+  ⎿  added 15 packages, and audited 131 packages in 16s
+
+     27 packages are looking for funding
+     … +20 lines (ctrl+o to expand)
+
+● Now let me create all the files. I'll do the simpler ones in parallel first.
+
+● Bash(mkdir -p /c/Users/tverk/wrksp/claude-code/src/migrations
+      /c/Users/tverk/wrksp/claude-code/src/lib/parsing
+      /c/Users/tverk/wrksp/claude-code/src/lib/queries /c/Us…)
+  ⎿  Done
+
+● Write(src\migrations\000_create_db.sql)
+  ⎿  Wrote 1 lines to src\migrations\000_create_db.sql
+      1 CREATE DATABASE family_books;
+
+● Write(src\migrations\001_create_tables.sql)
+  ⎿  Wrote 17 lines to src\migrations\001_create_tables.sql
+       1 CREATE TABLE books (
+       2     id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(
+         ),
+       3     book_type          TEXT NOT NULL,
+       4     title              TEXT NOT NULL,
+       5     description        TEXT,
+       6     image              TEXT NOT NULL DEFAULT 'https://via.placeh
+         older.com/150x226/1ECBE1/ffffff',
+       7     owner              TEXT NOT NULL,
+       8     readers            TEXT NOT NULL DEFAULT 'tverkon|0|1,dverko
+         n|0|1',
+       9     series             TEXT,
+      10     authors            TEXT NOT NULL,
+     … +7 lines (ctrl+o to expand)
+
+● Write(.env.local)
+  ⎿  Wrote 1 lines to .env.local
+      1 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/family
+        _books
+
+● Write(src\lib\db.ts)
+  ⎿  Wrote 5 lines to src\lib\db.ts
+      1 import { Pool } from "pg";
+      2 
+      3 export const pool = new Pool({
+      4   connectionString: process.env.DATABASE_URL,
+      5 });
+
+● Now the core logic files — parser, queries, API route, and import page.
+
+● Write(src\lib\parsing\kindle-parser.ts)
+  ⎿  Wrote 145 lines to src\lib\parsing\kindle-parser.ts
+      1 export type ParsedBook = {
+      2   bookType: string;
+      3   title: string;
+      4   authors: string;
+      5   owner: string;
+      6   purchaseDate: string;
+      7   sortableTitle: string;
+      8   searchableContent: string;
+      9 };
+     … +135 lines (ctrl+o to expand)
+
+● Write(src\lib\queries\books.ts)
+  ⎿  Wrote 106 lines to src\lib\queries\books.ts
+       1 import { pool } from "../db";
+       2 import type { ParsedBook } from "../parsing/kindle-parser";
+       3 
+       4 export type DuplicateCheckResult = {
+       5   newBooks: ParsedBook[];
+       6   duplicates: ParsedBook[];
+       7 };
+       8 
+       9 /**
+      10  * Check which parsed books already exist in the database.
+     … +96 lines (ctrl+o to expand)
+
+● Write(src\app\api\import\route.ts)
+  ⎿  Wrote 55 lines to src\app\api\import\route.ts
+      1 import { NextRequest, NextResponse } from "next/server";
+      2 import { z } from "zod";
+      3 import { parseKindleText } from "@/lib/parsing/kindle-parser";
+      4 import { checkDuplicates, insertBooks } from "@/lib/queries/books
+        ";
+      5 
+      6 const parseSchema = z.object({
+      7   action: z.literal("parse"),
+      8   rawText: z.string().min(1, "Text is required"),
+      9 });
+     … +45 lines (ctrl+o to expand)
+
+● Write(src\app\purchases\import\page.tsx)
+  ⎿  Wrote 203 lines to src\app\purchases\import\page.tsx
+       1 "use client";
+       2 
+       3 import { useState } from "react";
+       4 
+       5 type ParsedBook = {
+       6   bookType: string;
+       7   title: string;
+       8   authors: string;
+       9   owner: string;
+      10   purchaseDate: string;
+     … +193 lines (ctrl+o to expand)
+
+● Now update SPEC.MD with the new books table schema and references.
+
+● Read 1 file (ctrl+o to expand)
+
+● Update(SPEC.MD)
+  ⎿  Error editing file
+
+● Read 1 file (ctrl+o to expand)
+
+● The <mark> tags are just Read tool highlighting. Let me try the edit with
+  exact content.
+
+● Update(SPEC.MD)
+  ⎿  Added 24 lines, removed 34 lines
+      110  
+      111  > **Note:** better-auth internally uses camelCase field names 
+           (`userId`, `expiresAt`, etc.). Configure the PostgreSQL adapte
+           r with `usePlural: false` and snake_case field mappings as nee
+           ded, or let the CLI generate the correct migration.
+      112  
+      113 -#### `purchase_type` Enum                                     
+      113 +#### `books`                                                  
+      114  
+      115 -```sql                                                        
+      116 -CREATE TYPE purchase_type AS ENUM (                           
+      117 -    'KINDLE',                                                 
+      118 -    'AUDIBLE',                                                
+      119 -    'TECHNICAL'                                               
+      120 -);                                                            
+      121 -```                                                           
+      115 +Single shared family pool. DDL in `src/migrations/001_create_t
+          +ables.sql`.                                                   
+      116  
+      123 -#### `purchases`                                              
+      124 -                                                              
+      125 -Single shared family pool.                                    
+      126 -                                                              
+      117  ```sql
+      128 -CREATE TABLE purchases (                                      
+      129 -    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(), 
+      130 -    type          purchase_type NOT NULL,                     
+      131 -                                                              
+      132 -    title         TEXT NOT NULL,                              
+      133 -    authors       TEXT[],          -- supports multiple author
+          -s                                                             
+      134 -    purchase_date DATE,                                       
+      135 -    price         NUMERIC(10,2),                              
+      136 -    currency      TEXT DEFAULT 'USD',                         
+      137 -                                                              
+      138 -    source        TEXT,            -- Amazon, Audible, Manual 
+      139 -    external_id   TEXT,            -- ASIN or other ID (nullab
+          -le)                                                           
+      140 -                                                              
+      141 -    created_by    TEXT NOT NULL REFERENCES "user"(id),        
+      142 -    created_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NO
+          -W(),                                                          
+      143 -    updated_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NO
+          -W()                                                           
+      118 +CREATE TABLE books (                                          
+      119 +    id                 UUID PRIMARY KEY DEFAULT gen_random_uui
+          +d(),                                                          
+      120 +    book_type          TEXT NOT NULL,                         
+      121 +    title              TEXT NOT NULL,                         
+      122 +    description        TEXT,                                  
+      123 +    image              TEXT NOT NULL DEFAULT 'https://via.plac
+          +eholder.com/150x226/1ECBE1/ffffff',                           
+      124 +    owner              TEXT NOT NULL,                         
+      125 +    readers            TEXT NOT NULL DEFAULT 'tverkon|0|1,dver
+          +kon|0|1',                                                     
+      126 +    series             TEXT,                                  
+      127 +    authors            TEXT NOT NULL,                         
+      128 +    sortable_title     TEXT NOT NULL,                         
+      129 +    searchable_content TEXT NOT NULL,                         
+      130 +    purchase_date      TEXT NOT NULL,                         
+      131 +    created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),    
+      132 +    updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),    
+      133 +    CONSTRAINT uq_books_duplicate UNIQUE (title, authors, owne
+          +r, purchase_date)                                             
+      134  );
+      135  ```
+      136  
+      147 -> Duplicate detection logic will be added once attributes are 
+          -finalized (likely a composite unique index on `type + external
+          -_id` or `type + title + purchase_date`).                      
+      137 +> Duplicate detection: composite unique constraint on `title +
+          + authors + owner + purchase_date`.                            
+      138  
+      139  #### `tags` *(optional but included)*
+      140  
+     ...
+      145  );
+      146  ```
+      147  
+      158 -#### `purchase_tags`                                          
+      148 +#### `book_tags`                                              
+      149  
+      150  ```sql
+      161 -CREATE TABLE purchase_tags (                                  
+      162 -    purchase_id UUID REFERENCES purchases(id) ON DELETE CASCAD
+          -E,                                                            
+      163 -    tag_id      UUID REFERENCES tags(id) ON DELETE CASCADE,   
+      164 -    PRIMARY KEY (purchase_id, tag_id)                         
+      151 +CREATE TABLE book_tags (                                      
+      152 +    book_id UUID REFERENCES books(id) ON DELETE CASCADE,      
+      153 +    tag_id  UUID REFERENCES tags(id) ON DELETE CASCADE,       
+      154 +    PRIMARY KEY (book_id, tag_id)                             
+      155  );
+      156  ```
+      157  
+
+● Update(SPEC.MD)
+  ⎿  Added 8 lines, removed 8 lines
+      334  Each parser returns:
+      335  
+      336  ```ts
+      337 -type ParsedPurchase = {                                       
+      338 -  type: 'KINDLE' | 'AUDIBLE';                                 
+      337 +type ParsedBook = {                                           
+      338 +  bookType: string;                                           
+      339    title: string;
+      340 -  authors: string[];                                          
+      341 -  purchaseDate?: Date;                                        
+      342 -  price?: number;                                             
+      343 -  externalId?: string;                                        
+      340 +  authors: string;                                            
+      341 +  owner: string;                                              
+      342 +  purchaseDate: string;                                       
+      343 +  sortableTitle: string;                                      
+      344 +  searchableContent: string;                                  
+      345  };
+      346  ```
+      347  
+      348  **Duplicate detection:**
+      349  
+      349 -- Query DB                                                    
+      350 -- Compare based on future composite key                       
+      350 +- Query DB for matching `title + authors + owner + purchase_da
+          +te`                                                           
+      351  - Mark duplicates in preview
+      352  
+      353  **Final insert:**
+
+● Update(SPEC.MD)
+  ⎿  Added 2 lines, removed 2 lines
+      243   │   └── parsing/
+      244   │
+      245   ├── migrations/
+      246 - │   ├── 001_init.sql                                         
+      247 - │   └── 002_indexes.sql                                      
+      246 + │   ├── 000_create_db.sql                                    
+      247 + │   └── 001_create_tables.sql                                
+      248   │
+      249   └── types/
+      250  ```
+
+● Update(SPEC.MD)
+  ⎿  Added 4 lines, removed 6 lines
+      480  ## 13. Migration Strategy
+      481  
+      482  ```
+      483 -migrations/                                                   
+      484 -  001_init.sql                                                
+      485 -  002_indexes.sql                                             
+      483 +src/migrations/                                               
+      484 +  000_create_db.sql                                           
+      485 +  001_create_tables.sql                                       
+      486  ```
+      487  
+      488  Apply manually:
+      489  
+      490 -- **Local:** `psql -f migrations/001_init.sql`                
+      490 +- **Local:** `psql -f src/migrations/000_create_db.sql && psql
+          + -d family_books -f src/migrations/001_create_tables.sql`     
+      491  - **Production:** Same files applied via deployment script
+      492  
+      493 -No ORM migrations. better-auth tables are generated separately
+          - via `npx @better-auth/cli generate` and included in `001_init
+          -.sql`.                                                        
+      494 -                                                              
+      493  ---
+      494  
+      495  ## 14. Environment Configuration
+
+● Now let me verify the build compiles.
+
+● Bash(cd /c/Users/tverk/wrksp/claude-code && npx tsc --noEmit 2>&1 | head -30)
+  ⎿  src/app/api/import/route.ts(45,54): error TS2339: Property 'errors' do
+     es not exist on type 'ZodError<unknown>'.
+
+● Update(src\app\api\import\route.ts)
+  ⎿  Added 1 line, removed 1 line
+      42    } catch (error) {
+      43      if (error instanceof z.ZodError) {
+      44        return NextResponse.json(
+      45 -        { error: "Validation failed", details: error.errors }, 
+      45 +        { error: "Validation failed", details: error.issues }, 
+      46          { status: 400 }
+      47        );
+      48      }
+
+● Bash(cd /c/Users/tverk/wrksp/claude-code && npx tsc --noEmit 2>&1)
+  ⎿  (No output)
+
+● Clean build. Let me verify the parser works correctly with the sample data by
+  running a quick test.
+
+● Bash(cd /c/Users/tverk/wrksp/claude-code && node -e "
+      const { parseKindleText } = require('./src/lib/parsing/kindle-parser');…)
+  ⎿  Error: Exit code 1
+     node:internal/modules/cjs/loader:1424
+       throw err;
+       ^
+
+     Error: Cannot find module './src/lib/parsing/kindle-parser'
+     Require stack:
+     - C:\Users\tverk\wrksp\claude-code\[eval]
+         at Module._resolveFilename (node:internal/modules/cjs/loader:1421:15)
+         at defaultResolveImpl (node:internal/modules/cjs/loader:1059:19)
+     … +36 lines (ctrl+o to see all)
+
+● It's TypeScript. Let me use tsx.
+
+● Bash(cd /c/Users/tverk/wrksp/claude-code && npx tsx -e "
+      import { parseKindleText } from './src/lib/parsing/kindle-parser';…)
+  ⎿  Running in the background (↓ to manage)
+
+● Read 1 file (ctrl+o to expand)
+
+● Task Output bab7dff
+  ⎿  Error: No task found with ID: bab7dff
+
+● Read 1 file (ctrl+o to expand)
+
+● Bash(cd /c/Users/tverk/wrksp/claude-code && npx --yes tsx -e "import {
+      parseKindleText } from './src/lib/parsing/kindle-parser'; import fs from
+      'fs'; const text = fs…)
+  ⎿  Total books parsed: 25
+     1. Story of My Life (Story Lake Book 1) | Lucy Score | dverkon | 2026-
+     02-19
+     … +39 lines (ctrl+o to expand)
+
+● All 25 books parsed correctly. However, I notice books with "Shared with
+  Denise" are getting dverkon as owner — but "Shared with" means the account
+  owner shared it, so the owner should be tverkon. Let me check the Kindle text
+  more carefully.
+
+  Looking at the data: "Acquired by Denise A Verkon" = Denise bought it →
+  owner=dverkon. "Shared with Denise A Verkon" = someone (Tom) shared it with
+  Denise → owner=tverkon. The parser handles this correctly — resolveOwner
+  returns the name from the line, and for "Shared with Denise", it's returning
+  dverkon. But actually "Shared with Denise" means the book owner is Tom who
+  shared it. Let me fix this.
+
+● Update(src\lib\parsing\kindle-parser.ts)
+  ⎿  Added 23 lines, removed 7 lines
+      26   * Determine owner from "Acquired by ..." or "Shared with ..." 
+          lines.
+      27   * Maps known names to owner codes.
+      28   */
+      29 -function resolveOwner(line: string): string | null {           
+      30 -  const acquired = line.match(/^Acquired by (.+)$/i);          
+      31 -  const shared = line.match(/^Shared with (.+)$/i);            
+      32 -  const name = acquired?.[1] ?? shared?.[1];                   
+      33 -  if (!name) return null;                                      
+      34 -                                                               
+      29 +function nameToOwnerCode(name: string): string {               
+      30    const lower = name.toLowerCase();
+      31    if (lower.includes("denise")) return "dverkon";
+      32    if (lower.includes("tom") || lower.includes("thomas")) return
+           "tverkon";
+      38 -  // Default: use the full name lowercased as-is               
+      33    return lower.replace(/\s+/g, "");
+      34  }
+      35  
+      36  /**
+      37 + * Determine owner from "Acquired by ..." or "Shared with ..." 
+         +lines.                                                         
+      38 + * "Acquired by X" → X is the owner (they bought it).          
+      39 + * "Shared with X" → the OTHER person is the owner (they shared
+         + it with X).                                                   
+      40 + */                                                            
+      41 +function resolveOwner(line: string): string | null {           
+      42 +  const acquired = line.match(/^Acquired by (.+)$/i);          
+      43 +  if (acquired) {                                              
+      44 +    return nameToOwnerCode(acquired[1]);                       
+      45 +  }                                                            
+      46 +                                                               
+      47 +  const shared = line.match(/^Shared with (.+)$/i);            
+      48 +  if (shared) {                                                
+      49 +    // "Shared with X" means the account owner shared it with X
+         +,                                                              
+      50 +    // so the owner is the OTHER person (not X).               
+      51 +    const sharedWith = nameToOwnerCode(shared[1]);             
+      52 +    return sharedWith === "dverkon" ? "tverkon" : "dverkon";   
+      53 +  }                                                            
+      54 +                                                               
+      55 +  return null;                                                 
+      56 +}                                                              
+      57 +                                                               
+      58 +/**                                                            
+      59   * Parse a date string like "February 19, 2026" to "2026-02-19"
+          .
+      60   */
+      61  function parseDate(dateStr: string): string {
+
+● Bash(cd /c/Users/tverk/wrksp/claude-code && npx --yes tsx -e "import {
+      parseKindleText } from './src/lib/parsing/kindle-parser'; import fs from
+      'fs'; const text = fs…)
+  ⎿  Total books parsed: 25
+     1. dverkon | Story of My Life (Story Lake Book 1)
+     2. dverkon | Goodbye Linden Square: Totally Addictive Crime Fic
+     … +19 lines (ctrl+o to expand)
+
+● Now the ownership is correct — "Shared with Denise" books (Final Contact,
+  Angular books, Lost Town, Beasts in the Garden) are assigned to tverkon, while
+   "Acquired by Denise" books are dverkon.
+
+  Let me do a final type-check.
+
+● Bash(cd /c/Users/tverk/wrksp/claude-code && npx tsc --noEmit 2>&1)
+  ⎿  (No output)
+
+● All done. Here's what was implemented:
+
+  Files created:
+  - src/migrations/000_create_db.sql — CREATE DATABASE
+  - src/migrations/001_create_tables.sql — books table with unique constraint
+  - .env.local — DATABASE_URL config
+  - src/lib/db.ts — pg pool singleton
+  - src/lib/parsing/kindle-parser.ts — parses Kindle library text into
+  ParsedBook[]
+  - src/lib/queries/books.ts — checkDuplicates() and insertBooks()
+  - src/app/api/import/route.ts — POST handler with parse/import actions (Zod
+  validated)
+  - src/app/purchases/import/page.tsx — client component with textarea, parse
+  preview, and confirm import
+
+  Files updated:
+  - SPEC.MD — replaced purchases table with books table, updated
+  types/references
+  - package.json — added pg, @types/pg, zod
+
+  Parser verified: Successfully parses all 25 books from kindle-01.txt with
+  correct owner resolution ("Acquired by" = that person owns it, "Shared with X"
+   = the other person owns it).
+
+  Next steps to test end-to-end:
+  1. Run psql -f src/migrations/000_create_db.sql then psql -d family_books -f 
+  src/migrations/001_create_tables.sql
+  2. npm run dev → navigate to /purchases/import
+  3. Paste kindle-01.txt content → Parse → Confirm Import
+
+✻ Sautéed for 5m 1s
+
+● Background command "Test kindle parser with tsx" completed (exit code 0)
+
+● That was just the earlier parser test run — already superseded by the re-test
+  I ran after fixing the owner logic. Everything is complete.

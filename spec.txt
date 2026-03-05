@@ -1,0 +1,18 @@
+I'm a senior systems engineer, building an app for tracking family digital media purchases such as Kindle books, Audible Books, and Technical Books (PDF)
+
+There will be two ways to load purchases, for Kindle and Audible books the normal loading will be done by parsing a txt file. For technical books 
+loading will be by filing out a form for each purchase (item).
+
+Authenticated users will be able to create, update, view, delete single purchases as well as, in the case of Kindle, and Audible books 
+the user will also be able to load multiple purchased items from parsing a large txt file.
+
+I'll be using the latest version of NextJS with bun, & typescript. FOr styling we'll use TaiwindCSS
+Authentication will be implemented usinf better-auth libraru
+The loading of Kindle and Audible books will be loaded by 
+entering a large text file for parsing in a textbox.
+
+The data will be stored in a PostgresSQL database. 
+We will use the pg library to access the db.
+
+Do you need more information to create a technical specification 
+document which I can use as a foundation tp then build this app?
