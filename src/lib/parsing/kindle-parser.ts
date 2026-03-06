@@ -1,8 +1,10 @@
 export type ParsedBook = {
-  bookType: string;
+  bookType: "KINDLE" | "AUDIBLE" | "TECHNICAL";
   title: string;
+  description: string | null;
+  image: string;
   authors: string;
-  owner: string;
+  owner: "tverkon" | "dverkon";
   purchaseDate: string;
   sortableTitle: string;
   searchableContent: string;
@@ -17,21 +19,16 @@ const NOISE_LINES = new Set([
 ]);
 
 /**
- * Build a sortable title by stripping leading articles (A, An, The).
+ * Strip leading articles (A, An, The) for sorting.
  */
-function makeSortableTitle(title: string): string {
-  return title.replace(/^(a |an |the )/i, "").trim();
+function stripArticles(text: string): string {
+  return text.replace(/^(a |an |the )/i, "").trim();
 }
 
-/**
- * Determine owner from "Acquired by ..." or "Shared with ..." lines.
- * Maps known names to owner codes.
- */
-function nameToOwnerCode(name: string): string {
+function nameToOwnerCode(name: string): "tverkon" | "dverkon" {
   const lower = name.toLowerCase();
   if (lower.includes("denise")) return "dverkon";
-  if (lower.includes("tom") || lower.includes("thomas")) return "tverkon";
-  return lower.replace(/\s+/g, "");
+  return "tverkon";
 }
 
 /**
@@ -39,7 +36,7 @@ function nameToOwnerCode(name: string): string {
  * "Acquired by X" → X is the owner (they bought it).
  * "Shared with X" → the OTHER person is the owner (they shared it with X).
  */
-function resolveOwner(line: string): string | null {
+function resolveOwner(line: string): "tverkon" | "dverkon" | null {
   const acquired = line.match(/^Acquired by (.+)$/i);
   if (acquired) {
     return nameToOwnerCode(acquired[1]);
@@ -47,8 +44,6 @@ function resolveOwner(line: string): string | null {
 
   const shared = line.match(/^Shared with (.+)$/i);
   if (shared) {
-    // "Shared with X" means the account owner shared it with X,
-    // so the owner is the OTHER person (not X).
     const sharedWith = nameToOwnerCode(shared[1]);
     return sharedWith === "dverkon" ? "tverkon" : "dverkon";
   }
@@ -57,37 +52,103 @@ function resolveOwner(line: string): string | null {
 }
 
 /**
- * Extract series name from a title.
- * Matches the last parenthesized group containing "Book N" or just a trailing number.
+ * Extract series (with book number) from the last parenthesized group in a title.
  * Examples:
- *   "Story of My Life (Story Lake Book 1)" → "Story Lake"
- *   "Goodbye Linden Square... (A Port Alma Murder Mystery Book 7)" → "A Port Alma Murder Mystery"
- *   "Someone Else's Daughter: Book I (A Miranda's Rights Mystery 1)" → "A Miranda's Rights Mystery"
- *   "White Hot (Pocket Books Romance)" → null (no number)
- *   "Final Contact (Two Complete Series)" → null (no number)
+ *   "Story of My Life (Story Lake Book 1)" → "Story Lake Book 1"
+ *   "(A Port Alma Murder Mystery Book 7)" → "A Port Alma Murder Mystery Book 7"
+ *   "(A Miranda's Rights Mystery 1)" → "A Miranda's Rights Mystery 1"
+ *   "(Nantucket Seashells Series Book 4)" → "Nantucket Seashells Book 4"
+ *   "(Pocket Books Romance)" → null (no number)
+ *   "(Two Complete Series)" → null (no number)
  */
 function extractSeries(title: string): string | null {
-  // Match the last paren group with "Book N" pattern: (Series Name Book 3)
-  // Use [^()]+ to avoid matching across multiple paren groups
-  const bookMatch = title.match(/\(([^()]+?)\s+Book\s+\d+\)\s*$/i);
+  // Match last paren group with "Book(s) N" or "Book(s) N-M": (Series Name Book 3), (Series Books 1-3)
+  const bookMatch = title.match(/\(([^()]+?)\s+(Books?\s+\d+(?:-\d+)?)\)\s*$/i);
   if (bookMatch) {
-    let series = bookMatch[1].trim();
-    // Strip trailing "Series" word if present: "Nantucket Seashells Series" → "Nantucket Seashells"
-    series = series.replace(/\s+Series$/i, "");
-    return series;
+    let seriesName = bookMatch[1].trim();
+    const bookNum = bookMatch[2]; // e.g. "Book 1"
+    seriesName = seriesName.replace(/\s+Series$/i, "");
+    return `${seriesName} ${bookNum}`;
   }
 
   // Match last paren group ending with a bare number: (A Miranda's Rights Mystery 1)
   const numMatch = title.match(/\(([^()]+?)\s+(\d+)\)\s*$/);
   if (numMatch) {
     const candidate = numMatch[1].trim();
-    // Avoid false positives like "(Two Complete Series)" — candidate must not be purely descriptive
     if (candidate.length > 2) {
-      return candidate;
+      return `${candidate} ${numMatch[2]}`;
     }
   }
 
   return null;
+}
+
+/**
+ * Extract description from a title string.
+ * Description is text after a colon but before the series parenthetical (or end of string).
+ * e.g. "Beasts in the Garden: A sci-fi novel (Series Book 1)" → "A sci-fi novel"
+ *      "Already Home: A Romance About Family" → "A Romance About Family"
+ *      "Story of My Life (Story Lake Book 1)" → null (no colon)
+ */
+function extractDescription(title: string, series: string | null): string | null {
+  const colonIdx = title.indexOf(":");
+  if (colonIdx === -1) return null;
+
+  let afterColon = title.substring(colonIdx + 1).trim();
+
+  // Strip the series parenthetical from the end if present
+  if (series) {
+    // Remove the last paren group (the series one)
+    afterColon = afterColon.replace(/\s*\([^()]*\)\s*$/, "").trim();
+  }
+
+  return afterColon || null;
+}
+
+/**
+ * Build sortable title from just the title part + series (no description).
+ * "Beasts in the Garden: desc text (Series Book 1)" → "Beasts in the Garden (Series Book 1)"
+ * "The Fall of Shane Mackade (MacKade Brothers Book 4)" → "Fall of Shane Mackade (MacKade Brothers Book 4)"
+ */
+function makeSortableTitle(title: string, series: string | null): string {
+  // Get title part (before colon, or before series paren if no colon)
+  let titlePart: string;
+  const colonIdx = title.indexOf(":");
+  if (colonIdx !== -1) {
+    titlePart = title.substring(0, colonIdx).trim();
+  } else if (series) {
+    // Remove the last paren group to get the core title
+    titlePart = title.replace(/\s*\([^()]*\)\s*$/, "").trim();
+  } else {
+    titlePart = title;
+  }
+
+  const stripped = stripArticles(titlePart);
+  return series ? `${stripped} (${series})` : stripped;
+}
+
+/**
+ * Remove description (subtitle after colon) from a title, keeping series paren.
+ * "Beasts in the Garden: A sci-fi novel (Series Book 1)" → "Beasts in the Garden (Series Book 1)"
+ * "Already Home: A Romance About Family" → "Already Home"
+ * "Story of My Life (Story Lake Book 1)" → "Story of My Life (Story Lake Book 1)" (unchanged)
+ */
+function cleanTitle(rawTitle: string, series: string | null): string {
+  const colonIdx = rawTitle.indexOf(":");
+  if (colonIdx === -1) return rawTitle;
+
+  const titlePart = rawTitle.substring(0, colonIdx).trim();
+
+  // Find the series paren in the original title to preserve it
+  if (series) {
+    // Match the last paren group (series) from the original
+    const parenMatch = rawTitle.match(/(\([^()]*\))\s*$/);
+    if (parenMatch) {
+      return `${titlePart} ${parenMatch[1]}`;
+    }
+  }
+
+  return titlePart;
 }
 
 /**
@@ -99,10 +160,33 @@ function parseDate(dateStr: string): string {
   return d.toISOString().split("T")[0];
 }
 
+const DEFAULT_IMAGE = "https://via.placeholder.com/150x226/1ECBE1/ffffff";
+
+/**
+ * Filter Amazon book cover images from raw console-scraped JSON.
+ * Removes nav sprites and entries without image URLs.
+ */
+export function parseImageJson(json: string): string[] {
+  try {
+    let parsed = JSON.parse(json);
+    // Handle double-encoded JSON (copy() wraps in extra quotes)
+    if (typeof parsed === "string") {
+      parsed = JSON.parse(parsed);
+    }
+    const raw: { title?: string; image?: string }[] = parsed;
+    return raw
+      .map((e) => e.image ?? "")
+      .filter((url) => url.includes("m.media-amazon.com/images/I/"));
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Parse raw Kindle library text into structured book records.
+ * Optional images array is matched to books by position order.
  */
-export function parseKindleText(rawText: string): ParsedBook[] {
+export function parseKindleText(rawText: string, images: string[] = []): ParsedBook[] {
   const lines = rawText.split("\n").map((l) => l.trim());
   const books: ParsedBook[] = [];
 
@@ -114,13 +198,13 @@ export function parseKindleText(rawText: string): ParsedBook[] {
       continue;
     }
 
-    // Also skip device count lines like "In", "1", "Device", "2", "Devices"
+    // Skip device count lines like "In", "1", "Device", "2", "Devices"
     if (/^(in|\d+|devices?)$/i.test(lines[i])) {
       i++;
       continue;
     }
 
-    // A book block starts with a title (non-empty, non-noise, non-date line)
+    // A book block starts with a title
     const title = lines[i];
 
     // If this looks like an "Acquired" or "Shared" line, skip it (orphan)
@@ -139,7 +223,7 @@ export function parseKindleText(rawText: string): ParsedBook[] {
 
     // Find the "Acquired on ..." line
     let purchaseDate = "";
-    let owner = "tverkon"; // default owner
+    let owner: "tverkon" | "dverkon" = "tverkon"; // default owner
 
     while (i < lines.length) {
       const line = lines[i];
@@ -159,11 +243,10 @@ export function parseKindleText(rawText: string): ParsedBook[] {
       if (ownerResult !== null) {
         owner = ownerResult;
         i++;
-        // We've got all the data we need for this book
         break;
       }
 
-      // If we hit another title-like line (not noise, not date, not owner), stop
+      // If we hit another title-like line, stop
       break;
     }
 
@@ -176,15 +259,19 @@ export function parseKindleText(rawText: string): ParsedBook[] {
       i++;
     }
 
-    if (!purchaseDate) continue; // skip if we couldn't parse a date
+    if (!purchaseDate) continue;
 
     const series = extractSeries(title);
-    const sortableTitle = makeSortableTitle(title);
+    const description = extractDescription(title, series);
+    const cleaned = cleanTitle(title, series);
+    const sortableTitle = makeSortableTitle(title, series);
     const searchableContent = `${title} ${authors}`.toLowerCase();
 
     books.push({
       bookType: "KINDLE",
-      title,
+      title: cleaned,
+      description,
+      image: images[books.length] ?? DEFAULT_IMAGE,
       authors,
       owner,
       purchaseDate,

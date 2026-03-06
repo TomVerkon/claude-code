@@ -3,10 +3,12 @@
 import { useState } from "react";
 
 type ParsedBook = {
-  bookType: string;
+  bookType: "KINDLE" | "AUDIBLE" | "TECHNICAL";
   title: string;
+  description: string | null;
+  image: string;
   authors: string;
-  owner: string;
+  owner: "tverkon" | "dverkon";
   purchaseDate: string;
   sortableTitle: string;
   searchableContent: string;
@@ -20,6 +22,7 @@ type ParseResult = {
 
 export default function ImportPage() {
   const [rawText, setRawText] = useState("");
+  const [imagesJson, setImagesJson] = useState("");
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
   const [importCount, setImportCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
@@ -35,7 +38,7 @@ export default function ImportPage() {
       const res = await fetch("/api/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "parse", rawText }),
+        body: JSON.stringify({ action: "parse", rawText, imagesJson: imagesJson || undefined }),
       });
 
       if (!res.ok) {
@@ -74,6 +77,7 @@ export default function ImportPage() {
       setImportCount(data.inserted);
       setParseResult(null);
       setRawText("");
+      setImagesJson("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -97,6 +101,20 @@ export default function ImportPage() {
           placeholder="Paste your Kindle content library text here..."
           value={rawText}
           onChange={(e) => setRawText(e.target.value)}
+        />
+      </div>
+
+      <div className="mb-4">
+        <label htmlFor="images-json" className="block text-sm font-medium mb-2">
+          Images JSON (optional — from browser console script)
+        </label>
+        <textarea
+          id="images-json"
+          rows={4}
+          className="w-full border border-gray-300 rounded-lg p-3 font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          placeholder='Paste the JSON array from the browser console script...'
+          value={imagesJson}
+          onChange={(e) => setImagesJson(e.target.value)}
         />
       </div>
 
