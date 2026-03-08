@@ -1,6 +1,57 @@
 import { pool } from "../db";
 import type { ParsedBook } from "../parsing/kindle-parser";
 
+export type BookRow = {
+  id: number;
+  book_type: string;
+  title: string;
+  description: string | null;
+  image: string;
+  owner: string;
+  readers: string;
+  series: string | null;
+  authors: string;
+  sortable_title: string;
+  purchase_date: string;
+  created_at: string;
+};
+
+export type BooksPage = {
+  books: BookRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+};
+
+/**
+ * Fetch a paginated list of books, ordered by sortable_title.
+ */
+export async function getBooks(page = 1, pageSize = 24): Promise<BooksPage> {
+  const offset = (page - 1) * pageSize;
+
+  const [countResult, booksResult] = await Promise.all([
+    pool.query("SELECT COUNT(*) FROM books"),
+    pool.query(
+      `SELECT id, book_type, title, description, image, owner, readers, series, authors, sortable_title, purchase_date, created_at
+       FROM books
+       ORDER BY purchase_date DESC, sortable_title ASC
+       LIMIT $1 OFFSET $2`,
+      [pageSize, offset]
+    ),
+  ]);
+
+  const total = parseInt(countResult.rows[0].count, 10);
+
+  return {
+    books: booksResult.rows,
+    total,
+    page,
+    pageSize,
+    totalPages: Math.ceil(total / pageSize),
+  };
+}
+
 export type DuplicateCheckResult = {
   newBooks: ParsedBook[];
   duplicates: ParsedBook[];
