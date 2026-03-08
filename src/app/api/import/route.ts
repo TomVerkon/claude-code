@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { parseKindleText, parseImageJson } from "@/lib/parsing/kindle-parser";
+import { parseKindleText, parseImageJson, parseKindleHtml } from "@/lib/parsing/kindle-parser";
 import { checkDuplicates, insertBooks } from "@/lib/queries/books";
 
 const parseSchema = z.object({
   action: z.literal("parse"),
+  format: z.enum(["text", "html"]).default("text"),
   rawText: z.string().min(1, "Text is required"),
   imagesJson: z.string().optional(),
 });
@@ -35,8 +36,13 @@ export async function POST(request: NextRequest) {
     const parsed = requestSchema.parse(body);
 
     if (parsed.action === "parse") {
-      const images = parsed.imagesJson ? parseImageJson(parsed.imagesJson) : [];
-      const books = parseKindleText(parsed.rawText, images);
+      let books;
+      if (parsed.format === "html") {
+        books = parseKindleHtml(parsed.rawText);
+      } else {
+        const images = parsed.imagesJson ? parseImageJson(parsed.imagesJson) : [];
+        books = parseKindleText(parsed.rawText, images);
+      }
       const { newBooks, duplicates } = await checkDuplicates(books);
       return NextResponse.json({ newBooks, duplicates });
     }

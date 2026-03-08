@@ -1,3 +1,5 @@
+import { parse as parseHTML } from "node-html-parser";
+
 export type ParsedBook = {
   bookType: "KINDLE" | "AUDIBLE" | "TECHNICAL";
   title: string;
@@ -160,6 +162,13 @@ function parseDate(dateStr: string): string {
   return d.toISOString().split("T")[0];
 }
 
+/**
+ * Upgrade image URL from SX150 to SX300 for better quality.
+ */
+function upgradeImageUrl(url: string): string {
+  return url.replace(/\.SX\d+\./, ".SX300.");
+}
+
 const DEFAULT_IMAGE = "https://via.placeholder.com/150x226/1ECBE1/ffffff";
 
 /**
@@ -272,6 +281,76 @@ export function parseKindleText(rawText: string, images: string[] = []): ParsedB
       title: cleaned,
       description,
       image: images[books.length] ?? DEFAULT_IMAGE,
+      authors,
+      owner,
+      purchaseDate,
+      sortableTitle,
+      searchableContent,
+      series,
+    });
+  }
+
+  return books;
+}
+
+/**
+ * Parse Kindle library HTML (from "Manage Your Content" page source) into structured book records.
+ * Extracts title, authors, image, date, and owner directly from DOM structure.
+ */
+export function parseKindleHtml(html: string): ParsedBook[] {
+  const root = parseHTML(html);
+  const books: ParsedBook[] = [];
+
+  // Each book lives in a div with class containing "DigitalEntitySummary-module__container"
+  const containers = root.querySelectorAll('[class*="DigitalEntitySummary-module__container"]');
+
+  for (const container of containers) {
+    // Title: div[id^="content-title-"] > div[role="heading"]
+    const titleEl = container.querySelector('[id^="content-title-"] [role="heading"]');
+    if (!titleEl) continue;
+    const rawTitle = titleEl.text.replace(/\s+/g, " ").trim();
+    if (!rawTitle) continue;
+
+    // Authors: div[id^="content-author-"]
+    const authorEl = container.querySelector('[id^="content-author-"]');
+    const authors = authorEl?.text.trim() ?? "";
+    if (!authors) continue;
+
+    // Image: div[id^="content-image-"] img
+    const imgEl = container.querySelector('[id^="content-image-"] img');
+    const rawImageUrl = imgEl?.getAttribute("src") ?? "";
+    const image = rawImageUrl ? upgradeImageUrl(rawImageUrl) : DEFAULT_IMAGE;
+
+    // Date: div[id^="content-acquired-date-"]
+    const dateEl = container.querySelector('[id^="content-acquired-date-"]');
+    const dateText = dateEl?.text.trim() ?? "";
+    const dateMatch = dateText.match(/Acquired on\s+(.+)/i);
+    const purchaseDate = dateMatch ? parseDate(dateMatch[1]) : "";
+    if (!purchaseDate) continue;
+
+    // Owner: "Acquired by X" or "Shared with X" in an information_row
+    let owner: "tverkon" | "dverkon" = "tverkon";
+    const infoRows = container.querySelectorAll(".information_row");
+    for (const row of infoRows) {
+      const text = row.text.trim();
+      const ownerResult = resolveOwner(text);
+      if (ownerResult !== null) {
+        owner = ownerResult;
+        break;
+      }
+    }
+
+    const series = extractSeries(rawTitle);
+    const description = extractDescription(rawTitle, series);
+    const cleaned = cleanTitle(rawTitle, series);
+    const sortableTitle = makeSortableTitle(rawTitle, series);
+    const searchableContent = `${rawTitle} ${authors}`.toLowerCase();
+
+    books.push({
+      bookType: "KINDLE",
+      title: cleaned,
+      description,
+      image,
       authors,
       owner,
       purchaseDate,

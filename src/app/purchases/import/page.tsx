@@ -20,7 +20,10 @@ type ParseResult = {
   duplicates: ParsedBook[];
 };
 
+type ImportFormat = "text" | "html";
+
 export default function ImportPage() {
+  const [format, setFormat] = useState<ImportFormat>("html");
   const [rawText, setRawText] = useState("");
   const [imagesJson, setImagesJson] = useState("");
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
@@ -38,7 +41,12 @@ export default function ImportPage() {
       const res = await fetch("/api/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "parse", rawText, imagesJson: imagesJson || undefined }),
+        body: JSON.stringify({
+          action: "parse",
+          format,
+          rawText,
+          imagesJson: format === "text" ? (imagesJson || undefined) : undefined,
+        }),
       });
 
       if (!res.ok) {
@@ -89,34 +97,67 @@ export default function ImportPage() {
     <div className="max-w-4xl mx-auto p-6">
       <h1 className="text-2xl font-bold mb-6">Kindle Book Import</h1>
 
-      {/* Textarea */}
+      {/* Format toggle */}
+      <div className="mb-4 flex gap-4">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="radio"
+            name="format"
+            value="html"
+            checked={format === "html"}
+            onChange={() => setFormat("html")}
+            className="accent-blue-600"
+          />
+          <span className="text-sm font-medium">HTML (page source)</span>
+        </label>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="radio"
+            name="format"
+            value="text"
+            checked={format === "text"}
+            onChange={() => setFormat("text")}
+            className="accent-blue-600"
+          />
+          <span className="text-sm font-medium">Plain text + Images JSON</span>
+        </label>
+      </div>
+
+      {/* Main textarea */}
       <div className="mb-4">
         <label htmlFor="kindle-text" className="block text-sm font-medium mb-2">
-          Paste Kindle library text
+          {format === "html"
+            ? "Paste Kindle library page HTML"
+            : "Paste Kindle library text"}
         </label>
         <textarea
           id="kindle-text"
           rows={12}
           className="w-full border border-gray-300 rounded-lg p-3 font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          placeholder="Paste your Kindle content library text here..."
+          placeholder={format === "html"
+            ? "Paste the HTML source from your Kindle content library page..."
+            : "Paste your Kindle content library text here..."}
           value={rawText}
           onChange={(e) => setRawText(e.target.value)}
         />
       </div>
 
-      <div className="mb-4">
-        <label htmlFor="images-json" className="block text-sm font-medium mb-2">
-          Images JSON (optional — from browser console script)
-        </label>
-        <textarea
-          id="images-json"
-          rows={4}
-          className="w-full border border-gray-300 rounded-lg p-3 font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          placeholder='Paste the JSON array from the browser console script...'
-          value={imagesJson}
-          onChange={(e) => setImagesJson(e.target.value)}
-        />
-      </div>
+      {/* Images JSON — only for text mode */}
+      {format === "text" && (
+        <div className="mb-4">
+          <label htmlFor="images-json" className="block text-sm font-medium mb-2">
+            Images JSON (optional — from browser console script)
+          </label>
+          <textarea
+            id="images-json"
+            rows={4}
+            className="w-full border border-gray-300 rounded-lg p-3 font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            placeholder='Paste the JSON array from the browser console script...'
+            value={imagesJson}
+            onChange={(e) => setImagesJson(e.target.value)}
+          />
+        </div>
+      )}
 
       <button
         onClick={handleParse}
