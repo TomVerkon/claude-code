@@ -163,10 +163,10 @@ function parseDate(dateStr: string): string {
 }
 
 /**
- * Upgrade image URL from SX150 to SX300 for better quality.
+ * Upgrade image URL to SX450 for better quality.
  */
 function upgradeImageUrl(url: string): string {
-  return url.replace(/\.SX\d+\./, ".SX300.");
+  return url.replace(/\.SX\d+\./, ".SX450.");
 }
 
 const DEFAULT_IMAGE = "https://via.placeholder.com/150x226/1ECBE1/ffffff";

@@ -37,11 +37,11 @@ export function BookGrid({ books }: { books: BookRow[] }) {
           className="group rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md hover:border-gray-300 hover:-translate-y-1 transition-all duration-200 motion-reduce:transition-none motion-reduce:hover:translate-y-0"
         >
           {/* Cover image */}
-          <div className="aspect-[2/3] bg-gray-100 overflow-hidden">
+          <div className="aspect-[2/3] overflow-hidden" style={{ backgroundColor: cardBgColor(book.book_type) }}>
             <img
               src={book.image}
               alt={book.title}
-              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 motion-reduce:transition-none motion-reduce:group-hover:scale-100"
+              className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300 motion-reduce:transition-none motion-reduce:group-hover:scale-100"
               loading="lazy"
             />
           </div>

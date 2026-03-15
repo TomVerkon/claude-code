@@ -20,7 +20,7 @@ type ParseResult = {
   duplicates: ParsedBook[];
 };
 
-type ImportFormat = "text" | "html";
+type ImportFormat = "text" | "html" | "audible-html";
 
 export default function ImportPage() {
   const [format, setFormat] = useState<ImportFormat>("html");
@@ -95,20 +95,31 @@ export default function ImportPage() {
 
   return (
     <div className="max-w-4xl mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-6">Kindle Book Import</h1>
+      <h1 className="text-2xl font-bold mb-6">Book Import</h1>
 
       {/* Format toggle */}
-      <div className="mb-4 flex gap-4">
+      <div className="mb-4 flex gap-4 flex-wrap">
         <label className="flex items-center gap-2 cursor-pointer">
           <input
             type="radio"
             name="format"
             value="html"
             checked={format === "html"}
-            onChange={() => setFormat("html")}
+            onChange={() => { setFormat("html"); setRawText(""); setImagesJson(""); setParseResult(null); setError(null); }}
             className="accent-blue-600"
           />
-          <span className="text-sm font-medium">HTML (page source)</span>
+          <span className="text-sm font-medium">Kindle HTML</span>
+        </label>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="radio"
+            name="format"
+            value="audible-html"
+            checked={format === "audible-html"}
+            onChange={() => { setFormat("audible-html"); setRawText(""); setImagesJson(""); setParseResult(null); setError(null); }}
+            className="accent-blue-600"
+          />
+          <span className="text-sm font-medium">Audible HTML</span>
         </label>
         <label className="flex items-center gap-2 cursor-pointer">
           <input
@@ -116,7 +127,7 @@ export default function ImportPage() {
             name="format"
             value="text"
             checked={format === "text"}
-            onChange={() => setFormat("text")}
+            onChange={() => { setFormat("text"); setRawText(""); setImagesJson(""); setParseResult(null); setError(null); }}
             className="accent-blue-600"
           />
           <span className="text-sm font-medium">Plain text + Images JSON</span>
@@ -125,18 +136,22 @@ export default function ImportPage() {
 
       {/* Main textarea */}
       <div className="mb-4">
-        <label htmlFor="kindle-text" className="block text-sm font-medium mb-2">
-          {format === "html"
-            ? "Paste Kindle library page HTML"
-            : "Paste Kindle library text"}
+        <label htmlFor="import-text" className="block text-sm font-medium mb-2">
+          {format === "audible-html"
+            ? "Paste Audible library page HTML"
+            : format === "html"
+              ? "Paste Kindle library page HTML"
+              : "Paste Kindle library text"}
         </label>
         <textarea
-          id="kindle-text"
+          id="import-text"
           rows={12}
           className="w-full border border-gray-300 rounded-lg p-3 font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          placeholder={format === "html"
-            ? "Paste the HTML source from your Kindle content library page..."
-            : "Paste your Kindle content library text here..."}
+          placeholder={format === "audible-html"
+            ? "Paste the HTML source from your Audible content library page..."
+            : format === "html"
+              ? "Paste the HTML source from your Kindle content library page..."
+              : "Paste your Kindle content library text here..."}
           value={rawText}
           onChange={(e) => setRawText(e.target.value)}
         />
