@@ -3,10 +3,12 @@
 import { useState } from "react";
 
 type ParsedBook = {
-  bookType: string;
+  bookType: "KINDLE" | "AUDIBLE" | "TECHNICAL";
   title: string;
+  description: string | null;
+  image: string;
   authors: string;
-  owner: string;
+  owner: "tverkon" | "dverkon";
   purchaseDate: string;
   sortableTitle: string;
   searchableContent: string;
@@ -18,8 +20,12 @@ type ParseResult = {
   duplicates: ParsedBook[];
 };
 
+type ImportFormat = "text" | "html" | "audible-html";
+
 export default function ImportPage() {
+  const [format, setFormat] = useState<ImportFormat>("html");
   const [rawText, setRawText] = useState("");
+  const [imagesJson, setImagesJson] = useState("");
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
   const [importCount, setImportCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
@@ -35,7 +41,12 @@ export default function ImportPage() {
       const res = await fetch("/api/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "parse", rawText }),
+        body: JSON.stringify({
+          action: "parse",
+          format,
+          rawText,
+          imagesJson: format === "text" ? (imagesJson || undefined) : undefined,
+        }),
       });
 
       if (!res.ok) {
@@ -74,6 +85,7 @@ export default function ImportPage() {
       setImportCount(data.inserted);
       setParseResult(null);
       setRawText("");
+      setImagesJson("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -83,22 +95,84 @@ export default function ImportPage() {
 
   return (
     <div className="max-w-4xl mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-6">Kindle Book Import</h1>
+      <h1 className="text-2xl font-bold mb-6">Book Import</h1>
 
-      {/* Textarea */}
+      {/* Format toggle */}
+      <div className="mb-4 flex gap-4 flex-wrap">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="radio"
+            name="format"
+            value="html"
+            checked={format === "html"}
+            onChange={() => { setFormat("html"); setRawText(""); setImagesJson(""); setParseResult(null); setError(null); }}
+            className="accent-blue-600"
+          />
+          <span className="text-sm font-medium">Kindle HTML</span>
+        </label>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="radio"
+            name="format"
+            value="audible-html"
+            checked={format === "audible-html"}
+            onChange={() => { setFormat("audible-html"); setRawText(""); setImagesJson(""); setParseResult(null); setError(null); }}
+            className="accent-blue-600"
+          />
+          <span className="text-sm font-medium">Audible HTML</span>
+        </label>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="radio"
+            name="format"
+            value="text"
+            checked={format === "text"}
+            onChange={() => { setFormat("text"); setRawText(""); setImagesJson(""); setParseResult(null); setError(null); }}
+            className="accent-blue-600"
+          />
+          <span className="text-sm font-medium">Plain text + Images JSON</span>
+        </label>
+      </div>
+
+      {/* Main textarea */}
       <div className="mb-4">
-        <label htmlFor="kindle-text" className="block text-sm font-medium mb-2">
-          Paste Kindle library text
+        <label htmlFor="import-text" className="block text-sm font-medium mb-2">
+          {format === "audible-html"
+            ? "Paste Audible library page HTML"
+            : format === "html"
+              ? "Paste Kindle library page HTML"
+              : "Paste Kindle library text"}
         </label>
         <textarea
-          id="kindle-text"
+          id="import-text"
           rows={12}
           className="w-full border border-gray-300 rounded-lg p-3 font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          placeholder="Paste your Kindle content library text here..."
+          placeholder={format === "audible-html"
+            ? "Paste the HTML source from your Audible content library page..."
+            : format === "html"
+              ? "Paste the HTML source from your Kindle content library page..."
+              : "Paste your Kindle content library text here..."}
           value={rawText}
           onChange={(e) => setRawText(e.target.value)}
         />
       </div>
+
+      {/* Images JSON — only for text mode */}
+      {format === "text" && (
+        <div className="mb-4">
+          <label htmlFor="images-json" className="block text-sm font-medium mb-2">
+            Images JSON (optional — from browser console script)
+          </label>
+          <textarea
+            id="images-json"
+            rows={4}
+            className="w-full border border-gray-300 rounded-lg p-3 font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            placeholder='Paste the JSON array from the browser console script...'
+            value={imagesJson}
+            onChange={(e) => setImagesJson(e.target.value)}
+          />
+        </div>
+      )}
 
       <button
         onClick={handleParse}

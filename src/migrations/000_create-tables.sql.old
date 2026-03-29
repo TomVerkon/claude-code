@@ -1,0 +1,73 @@
+-- SQL
+
+    CREATE TYPE public.media_type_enum AS ENUM
+           ('kindle', 'audible', 'pdf', 'eBook', 'dvd');
+    ALTER TYPE public.media_type_enum OWNER TO postgres;
+
+    CREATE TYPE public.media_owner_enum AS ENUM
+           ('tverkon', 'dverkon');
+    ALTER TYPE public.media_owner_enum OWNER TO postgres;
+
+    CREATE TYPE public.user_role_enum AS ENUM
+           ('admin',' guest');
+    ALTER TYPE public.user_role_enum OWNER TO postgres;
+
+    CREATE SEQUENCE IF NOT EXISTS media_id_seq 
+    INCREMENT BY 1 
+    MINVALUE 1 
+    MAXVALUE 2147483647 
+    START WITH 1 
+    NO CYCLE;
+    ALTER SEQUENCE media_id_seq OWNER TO postgres;
+
+    CREATE SEQUENCE IF NOT EXISTS user_id_seq 
+    INCREMENT BY 1 
+    MINVALUE 1 
+    MAXVALUE 2147483647 
+    START WITH 1 
+    NO CYCLE;
+    ALTER SEQUENCE user_id_seq OWNER TO postgres;
+
+    CREATE TABLE IF NOT EXISTS public.media 
+    (
+        id integer NOT NULL DEFAULT nextval('"media_id_seq"'::regclass),
+        name character varying COLLATE pg_catalog."default" NOT NULL,
+        description character varying COLLATE pg_catalog."default",
+        media_type media_type_enum NOT NULL,
+        owner "media_owner_enum" NOT NULL,
+        readers character varying COLLATE pg_catalog."default" NOT NULL DEFAULT 'tverkon,false,0|dverkon,false,0'::character varying,
+        "imageURL" character varying COLLATE pg_catalog."default" NOT NULL DEFAULT 'https://via.placeholder.com/150x226/1ECBE1/ffffff'::character varying,
+        "purchaseDate" character varying COLLATE pg_catalog."default" NOT NULL DEFAULT now()::text,
+        authors character varying COLLATE pg_catalog."default" NOT NULL DEFAULT ''::character varying,
+        series character varying COLLATE pg_catalog."default",
+        "searchableContent" character varying COLLATE pg_catalog."default",
+        "createdAt" timestamp without time zone NOT NULL DEFAULT now(),
+        "updatedAt" timestamp without time zone NOT NULL DEFAULT now(),
+        version integer NOT NULL DEFAULT 0,
+        CONSTRAINT "PK_MEDIA" PRIMARY KEY (id)
+    )
+    TABLESPACE pg_default;
+    ALTER TABLE IF EXISTS public.media OWNER TO postgres;
+    ALTER SEQUENCE public."media_id_seq" OWNED BY public.media.id;
+    CREATE INDEX IF NOT EXISTS idx_media_name ON public.media USING btree (name);
+
+    CREATE TABLE IF NOT EXISTS public.user 
+    (
+        id integer NOT NULL DEFAULT nextval('"user_id_seq"'::regclass),
+        username character varying COLLATE pg_catalog."default" NOT NULL,
+        password character varying COLLATE pg_catalog."default" NOT NULL,
+        email character varying COLLATE pg_catalog."default" NOT NULL,
+        "emailVerifiedAt" timestamp without time zone,
+        "emailVerifToken" character varying COLLATE pg_catalog."default",
+        role "user_role_enum" NOT NULL DEFAULT 'guest'::"user_role_enum",
+        "createdAt" timestamp without time zone NOT NULL DEFAULT now(),
+        "updatedAt" timestamp without time zone NOT NULL DEFAULT now(),
+        version integer NOT NULL DEFAULT 0,
+        CONSTRAINT "PK_USERS" PRIMARY KEY (id),
+        CONSTRAINT "UQ_USERNAME" UNIQUE (username),
+        CONSTRAINT "UQ_EMAIL" UNIQUE (email)
+    )
+    ALTER TABLE IF EXISTS public.user OWNER TO postgres;
+    ALTER SEQUENCE public."user_id_seq" OWNED BY public.user.id;
+    CREATE INDEX IF NOT EXISTS idx_user_name ON public.user USING btree (username);
+    CREATE INDEX IF NOT EXISTS idx_user_email ON public.user USING btree (email);

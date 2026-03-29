@@ -7,13 +7,14 @@
 Monolithic Next.js App Router application:
 
 - **UI:** React Server Components + Client Components
-- **Business logic:** Server Actions
+- **Business logic:** Server Actions (planned), Route Handlers (implemented)
 - **Bulk parsing endpoint:** Route Handler (`app/api/import/route.ts`)
-- **Database access:**<mark> Direct `pg` clien</mark>t
-- **Auth:** better-auth (session-based)
+- **Database access:** Direct `pg` client
+- **Auth:** better-auth (session-based) — schema created, not yet wired up
 - **Validation:** Zod
 - **Database:** PostgreSQL
-- **Migration strategy:** <mark>Versioned raw SQL files</mark>
+- **Migration strategy:** Versioned raw SQL files
+- **Styling:** Tailwind CSS v4
 
 This is intentionally simple and production-ready without unnecessary abstraction.
 
@@ -27,7 +28,7 @@ Browser
 Next.js App Router
   ├── Server Components (data fetch)
   ├── Client Components (forms, import UI)
-  ├── Server Actions (CRUD)
+  ├── Server Actions (CRUD — planned)
   └── Route Handler (/api/import)
   ↓
 Database Layer (pg)
@@ -41,12 +42,10 @@ PostgreSQL
 
 ### 3.1 Core Entities
 
-- User
-- <mark>Purchase</mark>
-- ~~Tag *(optional v2)*~~
-- ~~PurchaseTag *(optional v2)~~*
-
-Since tagging is desired but not required for CSV export, we will include tagging in schema v1.
+- User (better-auth tables created, not yet integrated)
+- Book (primary entity — tracks Kindle, Audible, and Technical book purchases)
+- ~~Tag *(future)*~~
+- ~~BookTag *(future)*~~
 
 ### 3.2 Database Schema (v1)
 
@@ -115,13 +114,16 @@ CREATE TABLE verification (
 Single shared family pool. DDL in `src/migrations/001_create_tables.sql`.
 
 ```sql
+CREATE TYPE book_type_enum AS ENUM ('KINDLE', 'AUDIBLE', 'TECHNICAL');
+CREATE TYPE owner_enum AS ENUM ('tverkon', 'dverkon');
+
 CREATE TABLE books (
-    id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    book_type          TEXT NOT NULL,
+    id                 SERIAL PRIMARY KEY,
+    book_type          book_type_enum NOT NULL,
     title              TEXT NOT NULL,
     description        TEXT,
     image              TEXT NOT NULL DEFAULT 'https://via.placeholder.com/150x226/1ECBE1/ffffff',
-    owner              TEXT NOT NULL,
+    owner              owner_enum NOT NULL,
     readers            TEXT NOT NULL DEFAULT 'tverkon|0|1,dverkon|0|1',
     series             TEXT,
     authors            TEXT NOT NULL,
@@ -130,13 +132,16 @@ CREATE TABLE books (
     purchase_date      TEXT NOT NULL,
     created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT uq_books_duplicate UNIQUE (title, authors, owner, purchase_date)
+    CONSTRAINT uq_books_duplicate UNIQUE (book_type, title, authors, owner, purchase_date)
 );
 ```
 
-> Duplicate detection: composite unique constraint on `title + authors + owner + purchase_date`.
+> **Key differences from original spec:**
+> - `id` is `SERIAL` (auto-increment integer), not `UUID`
+> - `book_type` and `owner` use PostgreSQL enums instead of plain `TEXT`
+> - Duplicate detection: composite unique constraint on `book_type + title + authors + owner + purchase_date` (5 fields, includes `book_type`)
 
-#### `tags` *(optional but included)*
+#### `tags` *(not yet implemented)*
 
 ```sql
 CREATE TABLE tags (
@@ -145,7 +150,7 @@ CREATE TABLE tags (
 );
 ```
 
-#### `book_tags`
+#### `book_tags` *(not yet implemented)*
 
 ```sql
 CREATE TABLE book_tags (
@@ -159,7 +164,7 @@ CREATE TABLE book_tags (
 
 ## 4. Auth Model
 
-Using better-auth:
+Using better-auth (schema created, library not yet installed):
 
 - Email + password
 - No public registration
@@ -167,7 +172,7 @@ Using better-auth:
 - Forgot password supported (via `verification` table tokens)
 - Session-based auth
 
-**better-auth config (`lib/auth.ts`) — relevant excerpt:**
+**better-auth config (`lib/auth.ts`) — planned:**
 
 ```ts
 import { betterAuth } from "better-auth";
@@ -193,13 +198,13 @@ export const auth = betterAuth({
 
 ### Authorization Rules
 
-| Action          | ADMIN | USER |
-| --------------- |:-----:|:----:|
-| View purchases  | ✅     | ✅    |
-| Create purchase | ✅     | ✅    |
-| Update purchase | ✅     | ✅    |
-| Delete purchase | ✅     | ❌    |
-| Bulk import     | ✅     | ✅    |
+| Action        | ADMIN | USER |
+| ------------- |:-----:|:----:|
+| View books    | yes   | yes  |
+| Create book   | yes   | yes  |
+| Update book   | yes   | yes  |
+| Delete book   | yes   | no   |
+| Bulk import   | yes   | yes  |
 
 All data shared across family.
 
@@ -207,25 +212,47 @@ All data shared across family.
 
 ## 5. Application Structure
 
-### 5.1 Folder Structure
+### 5.1 Folder Structure (current)
 
 ```
 src/
  ├── app/
- │   ├── layout.tsx
- │   ├── page.tsx (dashboard)
- │   ├── login/
+ │   ├── layout.tsx              (root layout with Geist fonts)
+ │   ├── page.tsx                (placeholder — "Hello World")
+ │   ├── globals.css             (Tailwind v4 imports + theme)
  │   ├── purchases/
- │   │   ├── page.tsx
- │   │   ├── new/
- │   │   ├── [id]/
  │   │   └── import/
- │   ├── api/
- │   │   ├── auth/
- │   │   │   └── [...all]/
- │   │   │       └── route.ts  (better-auth handler)
- │   │   └── import/
- │   │       └── route.ts
+ │   │       └── page.tsx        (Kindle import UI — implemented)
+ │   └── api/
+ │       └── import/
+ │           └── route.ts        (parse + import endpoint)
+ │
+ ├── lib/
+ │   ├── db.ts                   (pg pool singleton)
+ │   ├── queries/
+ │   │   └── books.ts            (checkDuplicates, insertBooks)
+ │   └── parsing/
+ │       └── kindle-parser.ts    (parseKindleText, parseImageJson)
+ │
+ └── migrations/
+     ├── 000_create_db.sql
+     └── 001_create_tables.sql
+```
+
+### 5.2 Planned (not yet created)
+
+```
+src/
+ ├── app/
+ │   ├── login/                  (login page)
+ │   ├── purchases/
+ │   │   ├── page.tsx            (book list with filters)
+ │   │   ├── new/                (create book form)
+ │   │   └── [id]/               (edit book)
+ │   └── api/
+ │       └── auth/
+ │           └── [...all]/
+ │               └── route.ts    (better-auth handler)
  │
  ├── components/
  │   ├── layout/
@@ -235,16 +262,9 @@ src/
  │   └── ui/
  │
  ├── lib/
- │   ├── db.ts
  │   ├── auth.ts
- │   ├── queries/
  │   ├── actions/
- │   ├── validation/
- │   └── parsing/
- │
- ├── migrations/
- │   ├── 000_create_db.sql
- │   └── 001_create_tables.sql
+ │   └── validation/
  │
  └── types/
 ```
@@ -270,15 +290,20 @@ export const pool = new Pool({
 - All queries live in `lib/queries/*`.
 - No inline SQL in components.
 
+### 6.2 `queries/books.ts` (implemented)
+
+- **`checkDuplicates(books)`** — checks parsed books against DB using composite key (`book_type + title + authors + owner + purchase_date`), returns `{ newBooks, duplicates }`
+- **`insertBooks(books)`** — bulk inserts in a single transaction with `ON CONFLICT DO NOTHING`, returns inserted count
+
 ---
 
 ## 7. Server Actions Design
 
-Use Server Actions for:
+*Not yet implemented.* Will use Server Actions for:
 
-- `createPurchase`
-- `updatePurchase`
-- `deletePurchase`
+- `createBook`
+- `updateBook`
+- `deleteBook`
 - `createTag`
 - etc.
 
@@ -287,8 +312,8 @@ Use Server Actions for:
 ```ts
 "use server";
 
-export async function createPurchase(input: CreatePurchaseInput) {
-  const parsed = createPurchaseSchema.parse(input);
+export async function createBook(input: CreateBookInput) {
+  const parsed = createBookSchema.parse(input);
   // auth check
   // db transaction
 }
@@ -298,75 +323,92 @@ All validation via Zod before DB access.
 
 ---
 
-## 8. Bulk Import Flow (Kindle / Audible)
+## 8. Bulk Import Flow (Kindle)
 
-### 8.1 UX Flow
+### 8.1 Implementation Status: COMPLETE
+
+### 8.2 UX Flow
 
 1. User navigates to `/purchases/import`
-2. Pastes large TXT content
-3. Clicks "Parse"
-4. System:
-   - Parses text
-   - Runs duplicate detection
-   - Returns structured preview
-5. User confirms
-6. System bulk inserts in transaction
+2. Pastes raw Kindle library text into first textarea
+3. Optionally pastes images JSON (from browser console scraper) into second textarea
+4. Clicks "Parse"
+5. System:
+   - Parses text via `parseKindleText()`
+   - Parses images via `parseImageJson()` (filters Amazon cover URLs)
+   - Matches images to books by position order
+   - Runs duplicate detection against DB
+   - Returns structured preview split into "New Books" and "Duplicates"
+6. User reviews preview table (title, authors, series, owner, date)
+7. Clicks "Confirm Import"
+8. System bulk inserts in transaction
 
-### 8.2 Route Handler
+### 8.3 Route Handler
 
-`app/api/import/route.ts`
+`app/api/import/route.ts` — single POST endpoint with discriminated union:
 
-**Reasons:**
+- `action: "parse"` — validates input via Zod, parses text + images, checks duplicates
+- `action: "import"` — validates book array via Zod, bulk inserts
 
-- Large payload
-- Potential streaming
-- Clean separation from CRUD actions
-
-### 8.3 Parsing Layer
+### 8.4 Parsing Layer
 
 ```
 lib/parsing/
- ├── kindle-parser.ts
- ├── audible-parser.ts
- └── duplicate-detector.ts
+ └── kindle-parser.ts    (implemented)
 ```
+
+**`parseKindleText(rawText, images?)`** extracts books from raw Kindle library text:
+- Skips noise lines ("Deliver or remove from device", "Delete", "More Actions", device counts)
+- Extracts title, authors, purchase date from structured blocks
+- Detects owner from "Acquired by X" / "Shared with X" lines
+- Extracts series from parenthesized groups (e.g., "Series Name Book 3")
+- Extracts description from subtitle after colon
+- Strips leading articles (A, An, The) for sortable title
+- Builds searchable content as lowercase `title + authors`
+
+**`parseImageJson(json)`** filters Amazon book cover images:
+- Handles double-encoded JSON (from `copy()`)
+- Filters URLs containing `m.media-amazon.com/images/I/`
 
 Each parser returns:
 
 ```ts
 type ParsedBook = {
-  bookType: string;
+  bookType: "KINDLE" | "AUDIBLE" | "TECHNICAL";
   title: string;
+  description: string | null;
+  image: string;
   authors: string;
-  owner: string;
+  owner: "tverkon" | "dverkon";
   purchaseDate: string;
   sortableTitle: string;
   searchableContent: string;
+  series: string | null;
 };
 ```
 
-**Duplicate detection:**
+### 8.5 Duplicate Detection
 
-- Query DB for matching `title + authors + owner + purchase_date`
-- Mark duplicates in preview
+- Query DB for matching `book_type + title + authors + owner + purchase_date` (5-field composite)
+- Mark duplicates in preview (shown in amber-highlighted table)
+- Insert uses `ON CONFLICT ON CONSTRAINT uq_books_duplicate DO NOTHING`
 
-**Final insert:**
+### 8.6 Audible Parser
 
-- Use single transaction
-- Rollback on error
+*Not yet implemented.* Planned at `lib/parsing/audible-parser.ts`.
 
 ---
 
 ## 9. Filtering Design
 
-We will support filtering by:
+*Not yet implemented.* Will support filtering by:
 
-- Type
+- Type (book_type enum)
 - Author (ILIKE search)
 - Title (ILIKE search)
 - Date range
 - Tags
-- `created_by`
+- Owner
 
 **Implementation:**
 
@@ -379,7 +421,7 @@ We will support filtering by:
 /purchases?type=KINDLE&author=martin&from=2023-01-01
 ```
 
-Dynamic query builder in `lib/queries/purchases.ts`.
+Dynamic query builder in `lib/queries/books.ts`.
 
 ---
 
@@ -393,12 +435,12 @@ Dynamic query builder in `lib/queries/purchases.ts`.
 -------------------------------------------------
 | Sidebar          | Main Content              |
 | - Dashboard      |                           |
-| - Purchases      |                           |
+| - Books          |                           |
 | - Import         |                           |
 -------------------------------------------------
 ```
 
-### 10.2 Purchases Page
+### 10.2 Books Page (planned)
 
 ```
 [ Filter Bar ]
@@ -410,67 +452,76 @@ Dynamic query builder in `lib/queries/purchases.ts`.
 
 Pagination optional (5,000 records manageable, but add `LIMIT 50`).
 
-### 10.3 Create/Edit Form
+### 10.3 Create/Edit Form (planned)
 
 Fields:
 
-- Type (enum select)
+- Type (enum select: KINDLE, AUDIBLE, TECHNICAL)
 - Title
-- Authors (comma-separated → array)
+- Authors
 - Purchase Date
-- Price
-- External ID
+- Image URL
+- Series (optional)
+- Description (optional)
 - Tags (multi-select, optional)
 
-### 10.4 Import Page
+### 10.4 Import Page (implemented)
 
 ```
-[ Select Type: Kindle / Audible ]
+[ Kindle Book Import ]
 
 -----------------------------------
-| Large Textarea                  |
+| Textarea: Raw Kindle text       |
+-----------------------------------
+
+-----------------------------------
+| Textarea: Images JSON (optional)|
 -----------------------------------
 
 [ Parse ]
 
 -----------------------------------
-| Preview Table with duplicates   |
+| New Books table (title, authors,|
+|   series, owner, date)          |
 -----------------------------------
 
-[ Confirm Import ]
+-----------------------------------
+| Duplicates table (amber)        |
+-----------------------------------
+
+[ Confirm Import (N books) ]
 ```
 
 ---
 
 ## 11. Validation Strategy
 
-All input validated via Zod:
+Import validation implemented via Zod in `app/api/import/route.ts`:
+
+- `parseSchema` — validates raw text input
+- `importSchema` — validates book array with typed enums
+- Uses `z.discriminatedUnion` on `action` field
+
+Planned validation files:
 
 ```
 lib/validation/
- ├── purchase.ts
+ ├── book.ts
  ├── import.ts
  └── auth.ts
 ```
-
-**Zod rules:**
-
-- Title required
-- Authors non-empty
-- Price positive
-- Date valid
 
 ---
 
 ## 12. Indexing Strategy
 
-To support 5,000 records efficiently:
+*Not yet implemented.* To support 5,000 records efficiently:
 
 ```sql
-CREATE INDEX idx_purchases_type ON purchases(type);
-CREATE INDEX idx_purchases_purchase_date ON purchases(purchase_date);
-CREATE INDEX idx_purchases_created_by ON purchases(created_by);
-CREATE INDEX idx_purchases_title_trgm ON purchases USING gin (title gin_trgm_ops);
+CREATE INDEX idx_books_type ON books(book_type);
+CREATE INDEX idx_books_purchase_date ON books(purchase_date);
+CREATE INDEX idx_books_owner ON books(owner);
+CREATE INDEX idx_books_title_trgm ON books USING gin (title gin_trgm_ops);
 
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 ```
@@ -481,8 +532,8 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 ```
 src/migrations/
-  000_create_db.sql
-  001_create_tables.sql
+  000_create_db.sql          (CREATE DATABASE family_books)
+  001_create_tables.sql      (enums + books table + auth tables)
 ```
 
 Apply manually:
@@ -511,10 +562,11 @@ BETTER_AUTH_URL=
 
 ## 15. Error Handling Strategy
 
-- Zod → validation errors
-- Database errors → mapped to domain errors
+- Zod → validation errors (400 response with issue details)
+- Database errors → 500 response with generic message
 - Duplicate detection → preview stage, not runtime failure
-- All Server Actions wrapped in `try/catch`
+- Insert uses `ON CONFLICT DO NOTHING` as safety net
+- All Route Handlers wrapped in `try/catch`
 
 ---
 
@@ -523,7 +575,7 @@ BETTER_AUTH_URL=
 - Unit tests for parsers
 - Duplicate detection tests
 - SQL integration tests (optional)
-- Fixture TXT files for Kindle/Audible
+- Fixture TXT files for Kindle/Audible (`kindle-01.txt` exists as sample data)
 
 ---
 
@@ -531,9 +583,9 @@ BETTER_AUTH_URL=
 
 - 5,000 records trivial for Postgres
 - Bulk import:
-  - Use single `INSERT` with multiple values
-  - Or `pg COPY` (optional future optimization)
-  - Use transactions
+  - Uses single `INSERT` with multiple value rows
+  - `ON CONFLICT DO NOTHING` handles race conditions
+  - Wrapped in transaction with rollback on error
 
 ---
 
@@ -548,21 +600,30 @@ Designed to support:
 - File uploads instead of paste
 - Per-user visibility
 
-## 19. Open Questions
+## 19. Implementation Progress
 
-To finalize this spec completely, the following inputs are needed:
+### Completed
 
-- [ ] Kindle TXT format example
-- [ ] Audible TXT format example
-- [ ] Duplicate detection rule (composite key definition)
-- [ ] Hard delete vs. soft delete for purchases
-- [ ] Audit logging required?
+- [x] Project scaffolding (Next.js 16 + Tailwind v4 + TypeScript 5.9)
+- [x] Database schema (enums, books table, auth tables)
+- [x] Database connection layer (`lib/db.ts`)
+- [x] Kindle text parser with series/description/owner extraction
+- [x] Image JSON parser for Amazon cover URLs
+- [x] Duplicate detection query
+- [x] Bulk insert with transaction + conflict handling
+- [x] Import API route with Zod validation
+- [x] Import UI page (parse + preview + confirm)
+- [x] Sample data files (`kindle-01.txt`, `kindle-01-images.json`)
 
-Once resolved, the following will be produced:
+### Not Yet Started
 
-- Finalized DB schema
-- Duplicate detection SQL strategy
-- Import transaction logic
-- Complete server action contracts
-- Example SQL queries for advanced filtering
-- Concrete code skeleton for core layers
+- [ ] better-auth integration (library install + config + routes)
+- [ ] Login page
+- [ ] Dashboard page
+- [ ] Books list page with filtering
+- [ ] Create/edit book forms
+- [ ] Server Actions for CRUD
+- [ ] Tags system
+- [ ] Audible parser
+- [ ] Database indexes
+- [ ] Component library (`components/` directory)

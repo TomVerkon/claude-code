@@ -1,21 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { parseKindleText } from "@/lib/parsing/kindle-parser";
+import { parseKindleText, parseImageJson, parseKindleHtml } from "@/lib/parsing/kindle-parser";
+import { parseAudibleHtml } from "@/lib/parsing/audible-parser";
 import { checkDuplicates, insertBooks } from "@/lib/queries/books";
 
 const parseSchema = z.object({
   action: z.literal("parse"),
+  format: z.enum(["text", "html", "audible-html"]).default("text"),
   rawText: z.string().min(1, "Text is required"),
+  imagesJson: z.string().optional(),
 });
 
 const importSchema = z.object({
   action: z.literal("import"),
   books: z.array(
     z.object({
-      bookType: z.string(),
+      bookType: z.enum(["KINDLE", "AUDIBLE", "TECHNICAL"]),
       title: z.string(),
+      description: z.string().nullable(),
+      image: z.string(),
       authors: z.string(),
-      owner: z.string(),
+      owner: z.enum(["tverkon", "dverkon"]),
       purchaseDate: z.string(),
       sortableTitle: z.string(),
       searchableContent: z.string(),
@@ -32,7 +37,15 @@ export async function POST(request: NextRequest) {
     const parsed = requestSchema.parse(body);
 
     if (parsed.action === "parse") {
-      const books = parseKindleText(parsed.rawText);
+      let books;
+      if (parsed.format === "audible-html") {
+        books = parseAudibleHtml(parsed.rawText);
+      } else if (parsed.format === "html") {
+        books = parseKindleHtml(parsed.rawText);
+      } else {
+        const images = parsed.imagesJson ? parseImageJson(parsed.imagesJson) : [];
+        books = parseKindleText(parsed.rawText, images);
+      }
       const { newBooks, duplicates } = await checkDuplicates(books);
       return NextResponse.json({ newBooks, duplicates });
     }

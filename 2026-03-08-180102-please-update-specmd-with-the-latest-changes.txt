@@ -1,0 +1,2346 @@
+
+╭─── Claude Code v2.1.70 ──────────────────────────────────────────────────────╮
+│                                                    │ Tips for getting        │
+│                  Welcome back Tom!                 │ started                 │
+│                                                    │ Run /init to create a … │
+│                       ▐▛███▜▌                      │ ─────────────────────── │
+│                      ▝▜█████▛▘                     │ Recent activity         │
+│                        ▘▘ ▝▝                       │ No recent activity      │
+│                                                    │                         │
+│    Opus 4.6 · Claude Pro · tverkon@gmail.com's     │                         │
+│    Organization                                    │                         │
+│                ~\wrksp\claude-code                 │                         │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+> please update @SPEC.MD with the latest changes 
+  ⎿  Read SPEC.MD (568 lines)
+
+● Let me check the current state of the codebase to understand what's changed.
+
+● Searched for 4 patterns, read 1 file (ctrl+o to expand)
+
+● Explore(Read all src files for spec update)
+  ⎿  Done (14 tool uses · 28.2k tokens · 14s)
+  (ctrl+o to expand)
+
+● Let me read the key files for exact details.
+
+● Read 5 files (ctrl+o to expand)
+
+● Now I have a clear picture. Let me update the SPEC.MD to reflect the actual
+  implementation.
+
+● Read 1 file (ctrl+o to expand)
+
+● Now I have everything. Let me update SPEC.MD to reflect the actual
+  implementation.
+
+● Write(SPEC.MD)
+  ⎿  Added 629 lines, removed 568 lines
+        1 -# App Specification                                          
+        2 -                                                             
+        3 -## 1. System Overview                                        
+        4 -                                                             
+        5 -### 1.1 Architecture Style                                   
+        6 -                                                             
+        7 -Monolithic Next.js App Router application:                   
+        8 -                                                             
+        9 -- **UI:** React Server Components + Client Components        
+       10 -- **Business logic:** Server Actions                         
+       11 -- **Bulk parsing endpoint:** Route Handler (`app/api/import/ro
+          -ute.ts`)                                                     
+       12 -- **Database access:**<mark> Direct `pg` clien</mark>t       
+       13 -- **Auth:** better-auth (session-based)                      
+       14 -- **Validation:** Zod                                        
+       15 -- **Database:** PostgreSQL                                   
+       16 -- **Migration strategy:** <mark>Versioned raw SQL files</mark>
+          -                                                              
+       17 -                                                             
+       18 -This is intentionally simple and production-ready without unne
+          -cessary abstraction.                                         
+       19 -                                                             
+       20 ----                                                          
+       21 -                                                             
+       22 -## 2. High-Level Architecture                                
+       23 -                                                             
+       24 -```                                                          
+       25 -Browser                                                      
+       26 -  ↓                                                          
+       27 -Next.js App Router                                           
+       28 -  ├── Server Components (data fetch)                         
+       29 -  ├── Client Components (forms, import UI)                   
+       30 -  ├── Server Actions (CRUD)                                  
+       31 -  └── Route Handler (/api/import)                            
+       32 -  ↓                                                          
+       33 -Database Layer (pg)                                          
+       34 -  ↓                                                          
+       35 -PostgreSQL                                                   
+       36 -```                                                          
+       37 -                                                             
+       38 ----                                                          
+       39 -                                                             
+       40 -## 3. Domain Model                                           
+       41 -                                                             
+       42 -### 3.1 Core Entities                                        
+       43 -                                                             
+       44 -- User                                                       
+       45 -- <mark>Purchase</mark>                                      
+       46 -- ~~Tag *(optional v2)*~~                                    
+       47 -- ~~PurchaseTag *(optional v2)~~*                            
+       48 -                                                             
+       49 -Since tagging is desired but not required for CSV export, we w
+          -ill include tagging in schema v1.                            
+       50 -                                                             
+       51 -### 3.2 Database Schema (v1)                                 
+       52 -                                                             
+       53 -#### Auth Tables (managed by better-auth)                    
+       54 -                                                             
+       55 -better-auth requires four core tables. These are generated via
+          - `npx @better-auth/cli generate` and should not be manually mo
+          -dified. The `role` field is a custom `additionalField` added t
+          -o the `user` table via the auth config.                      
+       56 -                                                             
+       57 -```sql                                                       
+       58 --- Core user table (better-auth)                             
+       59 -CREATE TABLE "user" (                                        
+       60 -    id          TEXT PRIMARY KEY,                            
+       61 -    name        TEXT NOT NULL,                               
+       62 -    email       TEXT NOT NULL UNIQUE,                        
+       63 -    email_verified BOOLEAN NOT NULL DEFAULT FALSE,           
+       64 -    image       TEXT,                                        
+       65 -    role        TEXT NOT NULL DEFAULT 'user',  -- additionalFi
+          -eld: 'user' | 'admin'                                        
+       66 -    created_at  TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(
+          -),                                                           
+       67 -    updated_at  TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(
+          -)                                                            
+       68 -);                                                           
+       69 -                                                             
+       70 --- Session table (better-auth)                               
+       71 -CREATE TABLE session (                                       
+       72 -    id          TEXT PRIMARY KEY,                            
+       73 -    user_id     TEXT NOT NULL REFERENCES "user"(id) ON DELETE 
+          -CASCADE,                                                     
+       74 -    token       TEXT NOT NULL UNIQUE,                        
+       75 -    expires_at  TIMESTAMP WITH TIME ZONE NOT NULL,           
+       76 -    ip_address  TEXT,                                        
+       77 -    user_agent  TEXT,                                        
+       78 -    created_at  TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(
+          -),                                                           
+       79 -    updated_at  TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(
+          -)                                                            
+       80 -);                                                           
+       81 -                                                             
+       82 --- Account table — stores credentials and OAuth tokens (better
+          --auth)                                                       
+       83 --- For email+password auth, the hashed password lives in the `
+          -password` column here.                                       
+       84 -CREATE TABLE account (                                       
+       85 -    id                        TEXT PRIMARY KEY,              
+       86 -    user_id                   TEXT NOT NULL REFERENCES "user"(
+          -id) ON DELETE CASCADE,                                       
+       87 -    account_id                TEXT NOT NULL,                 
+       88 -    provider_id               TEXT NOT NULL,                 
+       89 -    access_token              TEXT,                          
+       90 -    refresh_token             TEXT,                          
+       91 -    access_token_expires_at   TIMESTAMP WITH TIME ZONE,      
+       92 -    refresh_token_expires_at  TIMESTAMP WITH TIME ZONE,      
+       93 -    scope                     TEXT,                          
+       94 -    id_token                  TEXT,                          
+       95 -    password                  TEXT,  -- hashed, for credential
+          - auth                                                        
+       96 -    created_at                TIMESTAMP WITH TIME ZONE NOT NUL
+          -L DEFAULT NOW(),                                             
+       97 -    updated_at                TIMESTAMP WITH TIME ZONE NOT NUL
+          -L DEFAULT NOW()                                              
+       98 -);                                                           
+       99 -                                                             
+      100 --- Verification table — used for email verification, password 
+          -reset tokens (better-auth)                                   
+      101 -CREATE TABLE verification (                                  
+      102 -    id          TEXT PRIMARY KEY,                            
+      103 -    identifier  TEXT NOT NULL,                               
+      104 -    value       TEXT NOT NULL,                               
+      105 -    expires_at  TIMESTAMP WITH TIME ZONE NOT NULL,           
+      106 -    created_at  TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(
+          -),                                                           
+      107 -    updated_at  TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(
+          -)                                                            
+      108 -);                                                           
+      109 -```                                                          
+      110 -                                                             
+      111 -> **Note:** better-auth internally uses camelCase field names 
+          -(`userId`, `expiresAt`, etc.). Configure the PostgreSQL adapte
+          -r with `usePlural: false` and snake_case field mappings as nee
+          -ded, or let the CLI generate the correct migration.          
+      112 -                                                             
+      113 -#### `books`                                                 
+      114 -                                                             
+      115 -Single shared family pool. DDL in `src/migrations/001_create_t
+          -ables.sql`.                                                  
+      116 -                                                             
+      117 -```sql                                                       
+      118 -CREATE TABLE books (                                         
+      119 -    id                 UUID PRIMARY KEY DEFAULT gen_random_uui
+          -d(),                                                         
+      120 -    book_type          TEXT NOT NULL,                        
+      121 -    title              TEXT NOT NULL,                        
+      122 -    description        TEXT,                                 
+      123 -    image              TEXT NOT NULL DEFAULT 'https://via.plac
+          -eholder.com/150x226/1ECBE1/ffffff',                          
+      124 -    owner              TEXT NOT NULL,                        
+      125 -    readers            TEXT NOT NULL DEFAULT 'tverkon|0|1,dver
+          -kon|0|1',                                                    
+      126 -    series             TEXT,                                 
+      127 -    authors            TEXT NOT NULL,                        
+      128 -    sortable_title     TEXT NOT NULL,                        
+      129 -    searchable_content TEXT NOT NULL,                        
+      130 -    purchase_date      TEXT NOT NULL,                        
+      131 -    created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),   
+      132 -    updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),   
+      133 -    CONSTRAINT uq_books_duplicate UNIQUE (title, authors, owne
+          -r, purchase_date)                                            
+      134 -);                                                           
+      135 -```                                                          
+      136 -                                                             
+      137 -> Duplicate detection: composite unique constraint on `title +
+          - authors + owner + purchase_date`.                           
+      138 -                                                             
+      139 -#### `tags` *(optional but included)*                        
+      140 -                                                             
+      141 -```sql                                                       
+      142 -CREATE TABLE tags (                                          
+      143 -    id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),         
+      144 -    name TEXT NOT NULL UNIQUE                                
+      145 -);                                                           
+      146 -```                                                          
+      147 -                                                             
+      148 -#### `book_tags`                                             
+      149 -                                                             
+      150 -```sql                                                       
+      151 -CREATE TABLE book_tags (                                     
+      152 -    book_id UUID REFERENCES books(id) ON DELETE CASCADE,     
+      153 -    tag_id  UUID REFERENCES tags(id) ON DELETE CASCADE,      
+      154 -    PRIMARY KEY (book_id, tag_id)                            
+      155 -);                                                           
+      156 -```                                                          
+      157 -                                                             
+      158 ----                                                          
+      159 -                                                             
+      160 -## 4. Auth Model                                             
+      161 -                                                             
+      162 -Using better-auth:                                           
+      163 -                                                             
+      164 -- Email + password                                           
+      165 -- No public registration                                     
+      166 -- Admin manually inserts users (via direct DB insert or admin 
+          -script)                                                      
+      167 -- Forgot password supported (via `verification` table tokens)
+      168 -- Session-based auth                                         
+      169 -                                                             
+      170 -**better-auth config (`lib/auth.ts`) — relevant excerpt:**   
+      171 -                                                             
+      172 -```ts                                                        
+      173 -import { betterAuth } from "better-auth";                    
+      174 -import { pool } from "./db";                                 
+      175 -                                                             
+      176 -export const auth = betterAuth({                             
+      177 -  database: pool,                                            
+      178 -  user: {                                                    
+      179 -    additionalFields: {                                      
+      180 -      role: {                                                
+      181 -        type: ["user", "admin"],                             
+      182 -        required: false,                                     
+      183 -        defaultValue: "user",                                
+      184 -        input: false, // users cannot set their own role     
+      185 -      },                                                     
+      186 -    },                                                       
+      187 -  },                                                         
+      188 -  emailAndPassword: {                                        
+      189 -    enabled: true,                                           
+      190 -  },                                                         
+      191 -});                                                          
+      192 -```                                                          
+      193 -                                                             
+      194 -### Authorization Rules                                      
+      195 -                                                             
+      196 -| Action          | ADMIN | USER |                           
+      197 -| --------------- |:-----:|:----:|                           
+      198 -| View purchases  | ✅     | ✅    |                         
+      199 -| Create purchase | ✅     | ✅    |                         
+      200 -| Update purchase | ✅     | ✅    |                         
+      201 -| Delete purchase | ✅     | ❌    |                         
+      202 -| Bulk import     | ✅     | ✅    |                         
+      203 -                                                             
+      204 -All data shared across family.                               
+      205 -                                                             
+      206 ----                                                          
+      207 -                                                             
+      208 -## 5. Application Structure                                  
+      209 -                                                             
+      210 -### 5.1 Folder Structure                                     
+      211 -                                                             
+      212 -```                                                          
+      213 -src/                                                         
+      214 - ├── app/                                                    
+      215 - │   ├── layout.tsx                                          
+      216 - │   ├── page.tsx (dashboard)                                
+      217 - │   ├── login/                                              
+      218 - │   ├── purchases/                                          
+      219 - │   │   ├── page.tsx                                        
+      220 - │   │   ├── new/                                            
+      221 - │   │   ├── [id]/                                           
+      222 - │   │   └── import/                                         
+      223 - │   ├── api/                                                
+      224 - │   │   ├── auth/                                           
+      225 - │   │   │   └── [...all]/                                   
+      226 - │   │   │       └── route.ts  (better-auth handler)         
+      227 - │   │   └── import/                                         
+      228 - │   │       └── route.ts                                    
+      229 - │                                                           
+      230 - ├── components/                                             
+      231 - │   ├── layout/                                             
+      232 - │   ├── purchases/                                          
+      233 - │   ├── forms/                                              
+      234 - │   ├── tables/                                             
+      235 - │   └── ui/                                                 
+      236 - │                                                           
+      237 - ├── lib/                                                    
+      238 - │   ├── db.ts                                               
+      239 - │   ├── auth.ts                                             
+      240 - │   ├── queries/                                            
+      241 - │   ├── actions/                                            
+      242 - │   ├── validation/                                         
+      243 - │   └── parsing/                                            
+      244 - │                                                           
+      245 - ├── migrations/                                             
+      246 - │   ├── 000_create_db.sql                                   
+      247 - │   └── 001_create_tables.sql                               
+      248 - │                                                           
+      249 - └── types/                                                  
+      250 -```                                                          
+      251 -                                                             
+      252 ----                                                          
+      253 -                                                             
+      254 -## 6. Database Access Layer                                  
+      255 -                                                             
+      256 -### 6.1 `db.ts`                                              
+      257 -                                                             
+      258 -Singleton `pg` pool:                                         
+      259 -                                                             
+      260 -```ts                                                        
+      261 -import { Pool } from 'pg';                                   
+      262 -                                                             
+      263 -export const pool = new Pool({                               
+      264 -  connectionString: process.env.DATABASE_URL,                
+      265 -});                                                          
+      266 -```                                                          
+      267 -                                                             
+      268 -- No ORM.                                                    
+      269 -- All queries parameterized.                                 
+      270 -- All queries live in `lib/queries/*`.                       
+      271 -- No inline SQL in components.                               
+      272 -                                                             
+      273 ----                                                          
+      274 -                                                             
+      275 -## 7. Server Actions Design                                  
+      276 -                                                             
+      277 -Use Server Actions for:                                      
+      278 -                                                             
+      279 -- `createPurchase`                                           
+      280 -- `updatePurchase`                                           
+      281 -- `deletePurchase`                                           
+      282 -- `createTag`                                                
+      283 -- etc.                                                       
+      284 -                                                             
+      285 -**Pattern:**                                                 
+      286 -                                                             
+      287 -```ts                                                        
+      288 -"use server";                                                
+      289 -                                                             
+      290 -export async function createPurchase(input: CreatePurchaseInpu
+          -t) {                                                         
+      291 -  const parsed = createPurchaseSchema.parse(input);          
+      292 -  // auth check                                              
+      293 -  // db transaction                                          
+      294 -}                                                            
+      295 -```                                                          
+      296 -                                                             
+      297 -All validation via Zod before DB access.                     
+      298 -                                                             
+      299 ----                                                          
+      300 -                                                             
+      301 -## 8. Bulk Import Flow (Kindle / Audible)                    
+      302 -                                                             
+      303 -### 8.1 UX Flow                                              
+      304 -                                                             
+      305 -1. User navigates to `/purchases/import`                     
+      306 -2. Pastes large TXT content                                  
+      307 -3. Clicks "Parse"                                            
+      308 -4. System:                                                   
+      309 -   - Parses text                                             
+      310 -   - Runs duplicate detection                                
+      311 -   - Returns structured preview                              
+      312 -5. User confirms                                             
+      313 -6. System bulk inserts in transaction                        
+      314 -                                                             
+      315 -### 8.2 Route Handler                                        
+      316 -                                                             
+      317 -`app/api/import/route.ts`                                    
+      318 -                                                             
+      319 -**Reasons:**                                                 
+      320 -                                                             
+      321 -- Large payload                                              
+      322 -- Potential streaming                                        
+      323 -- Clean separation from CRUD actions                         
+      324 -                                                             
+      325 -### 8.3 Parsing Layer                                        
+      326 -                                                             
+      327 -```                                                          
+      328 -lib/parsing/                                                 
+      329 - ├── kindle-parser.ts                                        
+      330 - ├── audible-parser.ts                                       
+      331 - └── duplicate-detector.ts                                   
+      332 -```                                                          
+      333 -                                                             
+      334 -Each parser returns:                                         
+      335 -                                                             
+      336 -```ts                                                        
+      337 -type ParsedBook = {                                          
+      338 -  bookType: string;                                          
+      339 -  title: string;                                             
+      340 -  authors: string;                                           
+      341 -  owner: string;                                             
+      342 -  purchaseDate: string;                                      
+      343 -  sortableTitle: string;                                     
+      344 -  searchableContent: string;                                 
+      345 -};                                                           
+      346 -```                                                          
+      347 -                                                             
+      348 -**Duplicate detection:**                                     
+      349 -                                                             
+      350 -- Query DB for matching `title + authors + owner + purchase_da
+          -te`                                                          
+      351 -- Mark duplicates in preview                                 
+      352 -                                                             
+      353 -**Final insert:**                                            
+      354 -                                                             
+      355 -- Use single transaction                                     
+      356 -- Rollback on error                                          
+      357 -                                                             
+      358 ----                                                          
+      359 -                                                             
+      360 -## 9. Filtering Design                                       
+      361 -                                                             
+      362 -We will support filtering by:                                
+      363 -                                                             
+      364 -- Type                                                       
+      365 -- Author (ILIKE search)                                      
+      366 -- Title (ILIKE search)                                       
+      367 -- Date range                                                 
+      368 -- Tags                                                       
+      369 -- `created_by`                                               
+      370 -                                                             
+      371 -**Implementation:**                                          
+      372 -                                                             
+      373 -- URL search params                                          
+      374 -- Server Component fetch with dynamic SQL builder            
+      375 -                                                             
+      376 -**Example:**                                                 
+      377 -                                                             
+      378 -```                                                          
+      379 -/purchases?type=KINDLE&author=martin&from=2023-01-01         
+      380 -```                                                          
+      381 -                                                             
+      382 -Dynamic query builder in `lib/queries/purchases.ts`.         
+      383 -                                                             
+      384 ----                                                          
+      385 -                                                             
+      386 -## 10. UI Wireframe (High-Level)                             
+      387 -                                                             
+      388 -### 10.1 Layout                                              
+      389 -                                                             
+      390 -```                                                          
+      391 --------------------------------------------------            
+      392 -| Header: App Name | User | Logout             |             
+      393 --------------------------------------------------            
+      394 -| Sidebar          | Main Content              |             
+      395 -| - Dashboard      |                           |             
+      396 -| - Purchases      |                           |             
+      397 -| - Import         |                           |             
+      398 --------------------------------------------------            
+      399 -```                                                          
+      400 -                                                             
+      401 -### 10.2 Purchases Page                                      
+      402 -                                                             
+      403 -```                                                          
+      404 -[ Filter Bar ]                                               
+      405 --------------------------------------------------            
+      406 -| Title | Author | Type | Date | Actions      |              
+      407 --------------------------------------------------            
+      408 -| Book  | Name   | K    | 2024 | Edit/Delete  |              
+      409 -```                                                          
+      410 -                                                             
+      411 -Pagination optional (5,000 records manageable, but add `LIMIT 
+          -50`).                                                        
+      412 -                                                             
+      413 -### 10.3 Create/Edit Form                                    
+      414 -                                                             
+      415 -Fields:                                                      
+      416 -                                                             
+      417 -- Type (enum select)                                         
+      418 -- Title                                                      
+      419 -- Authors (comma-separated → array)                          
+      420 -- Purchase Date                                              
+      421 -- Price                                                      
+      422 -- External ID                                                
+      423 -- Tags (multi-select, optional)                              
+      424 -                                                             
+      425 -### 10.4 Import Page                                         
+      426 -                                                             
+      427 -```                                                          
+      428 -[ Select Type: Kindle / Audible ]                            
+      429 -                                                             
+      430 ------------------------------------                          
+      431 -| Large Textarea                  |                          
+      432 ------------------------------------                          
+      433 -                                                             
+      434 -[ Parse ]                                                    
+      435 -                                                             
+      436 ------------------------------------                          
+      437 -| Preview Table with duplicates   |                          
+      438 ------------------------------------                          
+      439 -                                                             
+      440 -[ Confirm Import ]                                           
+      441 -```                                                          
+      442 -                                                             
+      443 ----                                                          
+      444 -                                                             
+      445 -## 11. Validation Strategy                                   
+      446 -                                                             
+      447 -All input validated via Zod:                                 
+      448 -                                                             
+      449 -```                                                          
+      450 -lib/validation/                                              
+      451 - ├── purchase.ts                                             
+      452 - ├── import.ts                                               
+      453 - └── auth.ts                                                 
+      454 -```                                                          
+      455 -                                                             
+      456 -**Zod rules:**                                               
+      457 -                                                             
+      458 -- Title required                                             
+      459 -- Authors non-empty                                          
+      460 -- Price positive                                             
+      461 -- Date valid                                                 
+      462 -                                                             
+      463 ----                                                          
+      464 -                                                             
+      465 -## 12. Indexing Strategy                                     
+      466 -                                                             
+      467 -To support 5,000 records efficiently:                        
+      468 -                                                             
+      469 -```sql                                                       
+      470 -CREATE INDEX idx_purchases_type ON purchases(type);          
+      471 -CREATE INDEX idx_purchases_purchase_date ON purchases(purchase
+          -_date);                                                      
+      472 -CREATE INDEX idx_purchases_created_by ON purchases(created_by)
+          -;                                                            
+      473 -CREATE INDEX idx_purchases_title_trgm ON purchases USING gin (
+          -title gin_trgm_ops);                                         
+      474 -                                                             
+      475 -CREATE EXTENSION IF NOT EXISTS pg_trgm;                      
+      476 -```                                                          
+      477 -                                                             
+      478 ----                                                          
+      479 -                                                             
+      480 -## 13. Migration Strategy                                    
+      481 -                                                             
+      482 -```                                                          
+      483 -src/migrations/                                              
+      484 -  000_create_db.sql                                          
+      485 -  001_create_tables.sql                                      
+      486 -```                                                          
+      487 -                                                             
+      488 -Apply manually:                                              
+      489 -                                                             
+      490 -- **Local:** `psql -f src/migrations/000_create_db.sql && psql
+          - -d family_books -f src/migrations/001_create_tables.sql`    
+      491 -- **Production:** Same files applied via deployment script   
+      492 -                                                             
+      493 ----                                                          
+      494 -                                                             
+      495 -## 14. Environment Configuration                             
+      496 -                                                             
+      497 -**`.env.local`**                                             
+      498 -                                                             
+      499 -```                                                          
+      500 -DATABASE_URL=                                                
+      501 -BETTER_AUTH_SECRET=                                          
+      502 -BETTER_AUTH_URL=                                             
+      503 -```                                                          
+      504 -                                                             
+      505 -**Vercel:**                                                  
+      506 -                                                             
+      507 -- Set same env vars in dashboard                             
+      508 -- Use production Postgres URL                                
+      509 -                                                             
+      510 ----                                                          
+      511 -                                                             
+      512 -## 15. Error Handling Strategy                               
+      513 -                                                             
+      514 -- Zod → validation errors                                    
+      515 -- Database errors → mapped to domain errors                  
+      516 -- Duplicate detection → preview stage, not runtime failure   
+      517 -- All Server Actions wrapped in `try/catch`                  
+      518 -                                                             
+      519 ----                                                          
+      520 -                                                             
+      521 -## 16. Testing Strategy (Recommended)                        
+      522 -                                                             
+      523 -- Unit tests for parsers                                     
+      524 -- Duplicate detection tests                                  
+      525 -- SQL integration tests (optional)                           
+      526 -- Fixture TXT files for Kindle/Audible                       
+      527 -                                                             
+      528 ----                                                          
+      529 -                                                             
+      530 -## 17. Performance Considerations                            
+      531 -                                                             
+      532 -- 5,000 records trivial for Postgres                         
+      533 -- Bulk import:                                               
+      534 -  - Use single `INSERT` with multiple values                 
+      535 -  - Or `pg COPY` (optional future optimization)              
+      536 -  - Use transactions                                         
+      537 -                                                             
+      538 ----                                                          
+      539 -                                                             
+      540 -## 18. Future Extensibility                                  
+      541 -                                                             
+      542 -Designed to support:                                         
+      543 -                                                             
+      544 -- Multiple families (add `family_id` column)                 
+      545 -- Spending analytics                                         
+      546 -- CSV export                                                 
+      547 -- Soft deletes                                               
+      548 -- File uploads instead of paste                              
+      549 -- Per-user visibility                                        
+      550 -                                                             
+      551 -## 19. Open Questions                                        
+      552 -                                                             
+      553 -To finalize this spec completely, the following inputs are nee
+          -ded:                                                         
+      554 -                                                             
+      555 -- [ ] Kindle TXT format example                              
+      556 -- [ ] Audible TXT format example                             
+      557 -- [ ] Duplicate detection rule (composite key definition)    
+      558 -- [ ] Hard delete vs. soft delete for purchases              
+      559 -- [ ] Audit logging required?                                
+      560 -                                                             
+      561 -Once resolved, the following will be produced:               
+      562 -                                                             
+      563 -- Finalized DB schema                                        
+      564 -- Duplicate detection SQL strategy                           
+      565 -- Import transaction logic                                   
+      566 -- Complete server action contracts                           
+      567 -- Example SQL queries for advanced filtering                 
+      568 -- Concrete code skeleton for core layers                      
+        1   No newline at end of file
+        2 +# App Specification                                           
+        3 +                                                              
+        4 +## 1. System Overview                                         
+        5 +                                                              
+        6 +### 1.1 Architecture Style                                    
+        7 +                                                              
+        8 +Monolithic Next.js App Router application:                    
+        9 +                                                              
+       10 +- **UI:** React Server Components + Client Components         
+       11 +- **Business logic:** Server Actions (planned), Route Handlers
+          + (implemented)                                                
+       12 +- **Bulk parsing endpoint:** Route Handler (`app/api/import/ro
+          +ute.ts`)                                                      
+       13 +- **Database access:** Direct `pg` client                     
+       14 +- **Auth:** better-auth (session-based) — schema created, not 
+          +yet wired up                                                  
+       15 +- **Validation:** Zod                                         
+       16 +- **Database:** PostgreSQL                                    
+       17 +- **Migration strategy:** Versioned raw SQL files             
+       18 +- **Styling:** Tailwind CSS v4                                
+       19 +                                                              
+       20 +This is intentionally simple and production-ready without unne
+          +cessary abstraction.                                          
+       21 +                                                              
+       22 +---                                                           
+       23 +                                                              
+       24 +## 2. High-Level Architecture                                 
+       25 +                                                              
+       26 +```                                                           
+       27 +Browser                                                       
+       28 +  ↓                                                           
+       29 +Next.js App Router                                            
+       30 +  ├── Server Components (data fetch)                          
+       31 +  ├── Client Components (forms, import UI)                    
+       32 +  ├── Server Actions (CRUD — planned)                         
+       33 +  └── Route Handler (/api/import)                             
+       34 +  ↓                                                           
+       35 +Database Layer (pg)                                           
+       36 +  ↓                                                           
+       37 +PostgreSQL                                                    
+       38 +```                                                           
+       39 +                                                              
+       40 +---                                                           
+       41 +                                                              
+       42 +## 3. Domain Model                                            
+       43 +                                                              
+       44 +### 3.1 Core Entities                                         
+       45 +                                                              
+       46 +- User (better-auth tables created, not yet integrated)       
+       47 +- Book (primary entity — tracks Kindle, Audible, and Technical
+          + book purchases)                                              
+       48 +- ~~Tag *(future)*~~                                          
+       49 +- ~~BookTag *(future)*~~                                      
+       50 +                                                              
+       51 +### 3.2 Database Schema (v1)                                  
+       52 +                                                              
+       53 +#### Auth Tables (managed by better-auth)                     
+       54 +                                                              
+       55 +better-auth requires four core tables. These are generated via
+          + `npx @better-auth/cli generate` and should not be manually mo
+          +dified. The `role` field is a custom `additionalField` added t
+          +o the `user` table via the auth config.                       
+       56 +                                                              
+       57 +```sql                                                        
+       58 +-- Core user table (better-auth)                              
+       59 +CREATE TABLE "user" (                                         
+       60 +    id          TEXT PRIMARY KEY,                             
+       61 +    name        TEXT NOT NULL,                                
+       62 +    email       TEXT NOT NULL UNIQUE,                         
+       63 +    email_verified BOOLEAN NOT NULL DEFAULT FALSE,            
+       64 +    image       TEXT,                                         
+       65 +    role        TEXT NOT NULL DEFAULT 'user',  -- additionalFi
+          +eld: 'user' | 'admin'                                         
+       66 +    created_at  TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(
+          +),                                                            
+       67 +    updated_at  TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(
+          +)                                                             
+       68 +);                                                            
+       69 +                                                              
+       70 +-- Session table (better-auth)                                
+       71 +CREATE TABLE session (                                        
+       72 +    id          TEXT PRIMARY KEY,                             
+       73 +    user_id     TEXT NOT NULL REFERENCES "user"(id) ON DELETE 
+          +CASCADE,                                                      
+       74 +    token       TEXT NOT NULL UNIQUE,                         
+       75 +    expires_at  TIMESTAMP WITH TIME ZONE NOT NULL,            
+       76 +    ip_address  TEXT,                                         
+       77 +    user_agent  TEXT,                                         
+       78 +    created_at  TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(
+          +),                                                            
+       79 +    updated_at  TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(
+          +)                                                             
+       80 +);                                                            
+       81 +                                                              
+       82 +-- Account table — stores credentials and OAuth tokens (better
+          +-auth)                                                        
+       83 +-- For email+password auth, the hashed password lives in the `
+          +password` column here.                                        
+       84 +CREATE TABLE account (                                        
+       85 +    id                        TEXT PRIMARY KEY,               
+       86 +    user_id                   TEXT NOT NULL REFERENCES "user"(
+          +id) ON DELETE CASCADE,                                        
+       87 +    account_id                TEXT NOT NULL,                  
+       88 +    provider_id               TEXT NOT NULL,                  
+       89 +    access_token              TEXT,                           
+       90 +    refresh_token             TEXT,                           
+       91 +    access_token_expires_at   TIMESTAMP WITH TIME ZONE,       
+       92 +    refresh_token_expires_at  TIMESTAMP WITH TIME ZONE,       
+       93 +    scope                     TEXT,                           
+       94 +    id_token                  TEXT,                           
+       95 +    password                  TEXT,  -- hashed, for credential
+          + auth                                                         
+       96 +    created_at                TIMESTAMP WITH TIME ZONE NOT NUL
+          +L DEFAULT NOW(),                                              
+       97 +    updated_at                TIMESTAMP WITH TIME ZONE NOT NUL
+          +L DEFAULT NOW()                                               
+       98 +);                                                            
+       99 +                                                              
+      100 +-- Verification table — used for email verification, password 
+          +reset tokens (better-auth)                                    
+      101 +CREATE TABLE verification (                                   
+      102 +    id          TEXT PRIMARY KEY,                             
+      103 +    identifier  TEXT NOT NULL,                                
+      104 +    value       TEXT NOT NULL,                                
+      105 +    expires_at  TIMESTAMP WITH TIME ZONE NOT NULL,            
+      106 +    created_at  TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(
+          +),                                                            
+      107 +    updated_at  TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(
+          +)                                                             
+      108 +);                                                            
+      109 +```                                                           
+      110 +                                                              
+      111 +> **Note:** better-auth internally uses camelCase field names 
+          +(`userId`, `expiresAt`, etc.). Configure the PostgreSQL adapte
+          +r with `usePlural: false` and snake_case field mappings as nee
+          +ded, or let the CLI generate the correct migration.           
+      112 +                                                              
+      113 +#### `books`                                                  
+      114 +                                                              
+      115 +Single shared family pool. DDL in `src/migrations/001_create_t
+          +ables.sql`.                                                   
+      116 +                                                              
+      117 +```sql                                                        
+      118 +CREATE TYPE book_type_enum AS ENUM ('KINDLE', 'AUDIBLE', 'TECH
+          +NICAL');                                                      
+      119 +CREATE TYPE owner_enum AS ENUM ('tverkon', 'dverkon');        
+      120 +                                                              
+      121 +CREATE TABLE books (                                          
+      122 +    id                 SERIAL PRIMARY KEY,                    
+      123 +    book_type          book_type_enum NOT NULL,               
+      124 +    title              TEXT NOT NULL,                         
+      125 +    description        TEXT,                                  
+      126 +    image              TEXT NOT NULL DEFAULT 'https://via.plac
+          +eholder.com/150x226/1ECBE1/ffffff',                           
+      127 +    owner              owner_enum NOT NULL,                   
+      128 +    readers            TEXT NOT NULL DEFAULT 'tverkon|0|1,dver
+          +kon|0|1',                                                     
+      129 +    series             TEXT,                                  
+      130 +    authors            TEXT NOT NULL,                         
+      131 +    sortable_title     TEXT NOT NULL,                         
+      132 +    searchable_content TEXT NOT NULL,                         
+      133 +    purchase_date      TEXT NOT NULL,                         
+      134 +    created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),    
+      135 +    updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),    
+      136 +    CONSTRAINT uq_books_duplicate UNIQUE (book_type, title, au
+          +thors, owner, purchase_date)                                  
+      137 +);                                                            
+      138 +```                                                           
+      139 +                                                              
+      140 +> **Key differences from original spec:**                     
+      141 +> - `id` is `SERIAL` (auto-increment integer), not `UUID`     
+      142 +> - `book_type` and `owner` use PostgreSQL enums instead of pl
+          +ain `TEXT`                                                    
+      143 +> - Duplicate detection: composite unique constraint on `book_
+          +type + title + authors + owner + purchase_date` (5 fields, inc
+          +ludes `book_type`)                                            
+      144 +                                                              
+      145 +#### `tags` *(not yet implemented)*                           
+      146 +                                                              
+      147 +```sql                                                        
+      148 +CREATE TABLE tags (                                           
+      149 +    id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),          
+      150 +    name TEXT NOT NULL UNIQUE                                 
+      151 +);                                                            
+      152 +```                                                           
+      153 +                                                              
+      154 +#### `book_tags` *(not yet implemented)*                      
+      155 +                                                              
+      156 +```sql                                                        
+      157 +CREATE TABLE book_tags (                                      
+      158 +    book_id UUID REFERENCES books(id) ON DELETE CASCADE,      
+      159 +    tag_id  UUID REFERENCES tags(id) ON DELETE CASCADE,       
+      160 +    PRIMARY KEY (book_id, tag_id)                             
+      161 +);                                                            
+      162 +```                                                           
+      163 +                                                              
+      164 +---                                                           
+      165 +                                                              
+      166 +## 4. Auth Model                                              
+      167 +                                                              
+      168 +Using better-auth (schema created, library not yet installed):
+      169 +                                                              
+      170 +- Email + password                                            
+      171 +- No public registration                                      
+      172 +- Admin manually inserts users (via direct DB insert or admin 
+          +script)                                                       
+      173 +- Forgot password supported (via `verification` table tokens) 
+      174 +- Session-based auth                                          
+      175 +                                                              
+      176 +**better-auth config (`lib/auth.ts`) — planned:**             
+      177 +                                                              
+      178 +```ts                                                         
+      179 +import { betterAuth } from "better-auth";                     
+      180 +import { pool } from "./db";                                  
+      181 +                                                              
+      182 +export const auth = betterAuth({                              
+      183 +  database: pool,                                             
+      184 +  user: {                                                     
+      185 +    additionalFields: {                                       
+      186 +      role: {                                                 
+      187 +        type: ["user", "admin"],                              
+      188 +        required: false,                                      
+      189 +        defaultValue: "user",                                 
+      190 +        input: false, // users cannot set their own role      
+      191 +      },                                                      
+      192 +    },                                                        
+      193 +  },                                                          
+      194 +  emailAndPassword: {                                         
+      195 +    enabled: true,                                            
+      196 +  },                                                          
+      197 +});                                                           
+      198 +```                                                           
+      199 +                                                              
+      200 +### Authorization Rules                                       
+      201 +                                                              
+      202 +| Action        | ADMIN | USER |                              
+      203 +| ------------- |:-----:|:----:|                              
+      204 +| View books    | yes   | yes  |                              
+      205 +| Create book   | yes   | yes  |                              
+      206 +| Update book   | yes   | yes  |                              
+      207 +| Delete book   | yes   | no   |                              
+      208 +| Bulk import   | yes   | yes  |                              
+      209 +                                                              
+      210 +All data shared across family.                                
+      211 +                                                              
+      212 +---                                                           
+      213 +                                                              
+      214 +## 5. Application Structure                                   
+      215 +                                                              
+      216 +### 5.1 Folder Structure (current)                            
+      217 +                                                              
+      218 +```                                                           
+      219 +src/                                                          
+      220 + ├── app/                                                     
+      221 + │   ├── layout.tsx              (root layout with Geist fonts
+          +)                                                             
+      222 + │   ├── page.tsx                (placeholder — "Hello World")
+      223 + │   ├── globals.css             (Tailwind v4 imports + theme)
+      224 + │   ├── purchases/                                           
+      225 + │   │   └── import/                                          
+      226 + │   │       └── page.tsx        (Kindle import UI — implement
+          +ed)                                                           
+      227 + │   └── api/                                                 
+      228 + │       └── import/                                          
+      229 + │           └── route.ts        (parse + import endpoint)    
+      230 + │                                                            
+      231 + ├── lib/                                                     
+      232 + │   ├── db.ts                   (pg pool singleton)          
+      233 + │   ├── queries/                                             
+      234 + │   │   └── books.ts            (checkDuplicates, insertBooks
+          +)                                                             
+      235 + │   └── parsing/                                             
+      236 + │       └── kindle-parser.ts    (parseKindleText, parseImageJ
+          +son)                                                          
+      237 + │                                                            
+      238 + └── migrations/                                              
+      239 +     ├── 000_create_db.sql                                    
+      240 +     └── 001_create_tables.sql                                
+      241 +```                                                           
+      242 +                                                              
+      243 +### 5.2 Planned (not yet created)                             
+      244 +                                                              
+      245 +```                                                           
+      246 +src/                                                          
+      247 + ├── app/                                                     
+      248 + │   ├── login/                  (login page)                 
+      249 + │   ├── purchases/                                           
+      250 + │   │   ├── page.tsx            (book list with filters)     
+      251 + │   │   ├── new/                (create book form)           
+      252 + │   │   └── [id]/               (edit book)                  
+      253 + │   └── api/                                                 
+      254 + │       └── auth/                                            
+      255 + │           └── [...all]/                                    
+      256 + │               └── route.ts    (better-auth handler)        
+      257 + │                                                            
+      258 + ├── components/                                              
+      259 + │   ├── layout/                                              
+      260 + │   ├── purchases/                                           
+      261 + │   ├── forms/                                               
+      262 + │   ├── tables/                                              
+      263 + │   └── ui/                                                  
+      264 + │                                                            
+      265 + ├── lib/                                                     
+      266 + │   ├── auth.ts                                              
+      267 + │   ├── actions/                                             
+      268 + │   └── validation/                                          
+      269 + │                                                            
+      270 + └── types/                                                   
+      271 +```                                                           
+      272 +                                                              
+      273 +---                                                           
+      274 +                                                              
+      275 +## 6. Database Access Layer                                   
+      276 +                                                              
+      277 +### 6.1 `db.ts`                                               
+      278 +                                                              
+      279 +Singleton `pg` pool:                                          
+      280 +                                                              
+      281 +```ts                                                         
+      282 +import { Pool } from 'pg';                                    
+      283 +                                                              
+      284 +export const pool = new Pool({                                
+      285 +  connectionString: process.env.DATABASE_URL,                 
+      286 +});                                                           
+      287 +```                                                           
+      288 +                                                              
+      289 +- No ORM.                                                     
+      290 +- All queries parameterized.                                  
+      291 +- All queries live in `lib/queries/*`.                        
+      292 +- No inline SQL in components.                                
+      293 +                                                              
+      294 +### 6.2 `queries/books.ts` (implemented)                      
+      295 +                                                              
+      296 +- **`checkDuplicates(books)`** — checks parsed books against D
+          +B using composite key (`book_type + title + authors + owner + 
+          +purchase_date`), returns `{ newBooks, duplicates }`           
+      297 +- **`insertBooks(books)`** — bulk inserts in a single transact
+          +ion with `ON CONFLICT DO NOTHING`, returns inserted count     
+      298 +                                                              
+      299 +---                                                           
+      300 +                                                              
+      301 +## 7. Server Actions Design                                   
+      302 +                                                              
+      303 +*Not yet implemented.* Will use Server Actions for:           
+      304 +                                                              
+      305 +- `createBook`                                                
+      306 +- `updateBook`                                                
+      307 +- `deleteBook`                                                
+      308 +- `createTag`                                                 
+      309 +- etc.                                                        
+      310 +                                                              
+      311 +**Pattern:**                                                  
+      312 +                                                              
+      313 +```ts                                                         
+      314 +"use server";                                                 
+      315 +                                                              
+      316 +export async function createBook(input: CreateBookInput) {    
+      317 +  const parsed = createBookSchema.parse(input);               
+      318 +  // auth check                                               
+      319 +  // db transaction                                           
+      320 +}                                                             
+      321 +```                                                           
+      322 +                                                              
+      323 +All validation via Zod before DB access.                      
+      324 +                                                              
+      325 +---                                                           
+      326 +                                                              
+      327 +## 8. Bulk Import Flow (Kindle)                               
+      328 +                                                              
+      329 +### 8.1 Implementation Status: COMPLETE                       
+      330 +                                                              
+      331 +### 8.2 UX Flow                                               
+      332 +                                                              
+      333 +1. User navigates to `/purchases/import`                      
+      334 +2. Pastes raw Kindle library text into first textarea         
+      335 +3. Optionally pastes images JSON (from browser console scraper
+          +) into second textarea                                        
+      336 +4. Clicks "Parse"                                             
+      337 +5. System:                                                    
+      338 +   - Parses text via `parseKindleText()`                      
+      339 +   - Parses images via `parseImageJson()` (filters Amazon cove
+          +r URLs)                                                       
+      340 +   - Matches images to books by position order                
+      341 +   - Runs duplicate detection against DB                      
+      342 +   - Returns structured preview split into "New Books" and "Du
+          +plicates"                                                     
+      343 +6. User reviews preview table (title, authors, series, owner, 
+          +date)                                                         
+      344 +7. Clicks "Confirm Import"                                    
+      345 +8. System bulk inserts in transaction                         
+      346 +                                                              
+      347 +### 8.3 Route Handler                                         
+      348 +                                                              
+      349 +`app/api/import/route.ts` — single POST endpoint with discrimi
+          +nated union:                                                  
+      350 +                                                              
+      351 +- `action: "parse"` — validates input via Zod, parses text + i
+          +mages, checks duplicates                                      
+      352 +- `action: "import"` — validates book array via Zod, bulk inse
+          +rts                                                           
+      353 +                                                              
+      354 +### 8.4 Parsing Layer                                         
+      355 +                                                              
+      356 +```                                                           
+      357 +lib/parsing/                                                  
+      358 + └── kindle-parser.ts    (implemented)                        
+      359 +```                                                           
+      360 +                                                              
+      361 +**`parseKindleText(rawText, images?)`** extracts books from ra
+          +w Kindle library text:                                        
+      362 +- Skips noise lines ("Deliver or remove from device", "Delete"
+          +, "More Actions", device counts)                              
+      363 +- Extracts title, authors, purchase date from structured block
+          +s                                                             
+      364 +- Detects owner from "Acquired by X" / "Shared with X" lines  
+      365 +- Extracts series from parenthesized groups (e.g., "Series Nam
+          +e Book 3")                                                    
+      366 +- Extracts description from subtitle after colon              
+      367 +- Strips leading articles (A, An, The) for sortable title     
+      368 +- Builds searchable content as lowercase `title + authors`    
+      369 +                                                              
+      370 +**`parseImageJson(json)`** filters Amazon book cover images:  
+      371 +- Handles double-encoded JSON (from `copy()`)                 
+      372 +- Filters URLs containing `m.media-amazon.com/images/I/`      
+      373 +                                                              
+      374 +Each parser returns:                                          
+      375 +                                                              
+      376 +```ts                                                         
+      377 +type ParsedBook = {                                           
+      378 +  bookType: "KINDLE" | "AUDIBLE" | "TECHNICAL";               
+      379 +  title: string;                                              
+      380 +  description: string | null;                                 
+      381 +  image: string;                                              
+      382 +  authors: string;                                            
+      383 +  owner: "tverkon" | "dverkon";                               
+      384 +  purchaseDate: string;                                       
+      385 +  sortableTitle: string;                                      
+      386 +  searchableContent: string;                                  
+      387 +  series: string | null;                                      
+      388 +};                                                            
+      389 +```                                                           
+      390 +                                                              
+      391 +### 8.5 Duplicate Detection                                   
+      392 +                                                              
+      393 +- Query DB for matching `book_type + title + authors + owner +
+          + purchase_date` (5-field composite)                           
+      394 +- Mark duplicates in preview (shown in amber-highlighted table
+          +)                                                             
+      395 +- Insert uses `ON CONFLICT ON CONSTRAINT uq_books_duplicate DO
+          + NOTHING`                                                     
+      396 +                                                              
+      397 +### 8.6 Audible Parser                                        
+      398 +                                                              
+      399 +*Not yet implemented.* Planned at `lib/parsing/audible-parser.
+          +ts`.                                                          
+      400 +                                                              
+      401 +---                                                           
+      402 +                                                              
+      403 +## 9. Filtering Design                                        
+      404 +                                                              
+      405 +*Not yet implemented.* Will support filtering by:             
+      406 +                                                              
+      407 +- Type (book_type enum)                                       
+      408 +- Author (ILIKE search)                                       
+      409 +- Title (ILIKE search)                                        
+      410 +- Date range                                                  
+      411 +- Tags                                                        
+      412 +- Owner                                                       
+      413 +                                                              
+      414 +**Implementation:**                                           
+      415 +                                                              
+      416 +- URL search params                                           
+      417 +- Server Component fetch with dynamic SQL builder             
+      418 +                                                              
+      419 +**Example:**                                                  
+      420 +                                                              
+      421 +```                                                           
+      422 +/purchases?type=KINDLE&author=martin&from=2023-01-01          
+      423 +```                                                           
+      424 +                                                              
+      425 +Dynamic query builder in `lib/queries/books.ts`.              
+      426 +                                                              
+      427 +---                                                           
+      428 +                                                              
+      429 +## 10. UI Wireframe (High-Level)                              
+      430 +                                                              
+      431 +### 10.1 Layout                                               
+      432 +                                                              
+      433 +```                                                           
+      434 +-------------------------------------------------             
+      435 +| Header: App Name | User | Logout             |              
+      436 +-------------------------------------------------             
+      437 +| Sidebar          | Main Content              |              
+      438 +| - Dashboard      |                           |              
+      439 +| - Books          |                           |              
+      440 +| - Import         |                           |              
+      441 +-------------------------------------------------             
+      442 +```                                                           
+      443 +                                                              
+      444 +### 10.2 Books Page (planned)                                 
+      445 +                                                              
+      446 +```                                                           
+      447 +[ Filter Bar ]                                                
+      448 +-------------------------------------------------             
+      449 +| Title | Author | Type | Date | Actions      |               
+      450 +-------------------------------------------------             
+      451 +| Book  | Name   | K    | 2024 | Edit/Delete  |               
+      452 +```                                                           
+      453 +                                                              
+      454 +Pagination optional (5,000 records manageable, but add `LIMIT 
+          +50`).                                                         
+      455 +                                                              
+      456 +### 10.3 Create/Edit Form (planned)                           
+      457 +                                                              
+      458 +Fields:                                                       
+      459 +                                                              
+      460 +- Type (enum select: KINDLE, AUDIBLE, TECHNICAL)              
+      461 +- Title                                                       
+      462 +- Authors                                                     
+      463 +- Purchase Date                                               
+      464 +- Image URL                                                   
+      465 +- Series (optional)                                           
+      466 +- Description (optional)                                      
+      467 +- Tags (multi-select, optional)                               
+      468 +                                                              
+      469 +### 10.4 Import Page (implemented)                            
+      470 +                                                              
+      471 +```                                                           
+      472 +[ Kindle Book Import ]                                        
+      473 +                                                              
+      474 +-----------------------------------                           
+      475 +| Textarea: Raw Kindle text       |                           
+      476 +-----------------------------------                           
+      477 +                                                              
+      478 +-----------------------------------                           
+      479 +| Textarea: Images JSON (optional)|                           
+      480 +-----------------------------------                           
+      481 +                                                              
+      482 +[ Parse ]                                                     
+      483 +                                                              
+      484 +-----------------------------------                           
+      485 +| New Books table (title, authors,|                           
+      486 +|   series, owner, date)          |                           
+      487 +-----------------------------------                           
+      488 +                                                              
+      489 +-----------------------------------                           
+      490 +| Duplicates table (amber)        |                           
+      491 +-----------------------------------                           
+      492 +                                                              
+      493 +[ Confirm Import (N books) ]                                  
+      494 +```                                                           
+      495 +                                                              
+      496 +---                                                           
+      497 +                                                              
+      498 +## 11. Validation Strategy                                    
+      499 +                                                              
+      500 +Import validation implemented via Zod in `app/api/import/route
+          +.ts`:                                                         
+      501 +                                                              
+      502 +- `parseSchema` — validates raw text input                    
+      503 +- `importSchema` — validates book array with typed enums      
+      504 +- Uses `z.discriminatedUnion` on `action` field               
+      505 +                                                              
+      506 +Planned validation files:                                     
+      507 +                                                              
+      508 +```                                                           
+      509 +lib/validation/                                               
+      510 + ├── book.ts                                                  
+      511 + ├── import.ts                                                
+      512 + └── auth.ts                                                  
+      513 +```                                                           
+      514 +                                                              
+      515 +---                                                           
+      516 +                                                              
+      517 +## 12. Indexing Strategy                                      
+      518 +                                                              
+      519 +*Not yet implemented.* To support 5,000 records efficiently:  
+      520 +                                                              
+      521 +```sql                                                        
+      522 +CREATE INDEX idx_books_type ON books(book_type);              
+      523 +CREATE INDEX idx_books_purchase_date ON books(purchase_date); 
+      524 +CREATE INDEX idx_books_owner ON books(owner);                 
+      525 +CREATE INDEX idx_books_title_trgm ON books USING gin (title gi
+          +n_trgm_ops);                                                  
+      526 +                                                              
+      527 +CREATE EXTENSION IF NOT EXISTS pg_trgm;                       
+      528 +```                                                           
+      529 +                                                              
+      530 +---                                                           
+      531 +                                                              
+      532 +## 13. Migration Strategy                                     
+      533 +                                                              
+      534 +```                                                           
+      535 +src/migrations/                                               
+      536 +  000_create_db.sql          (CREATE DATABASE family_books)   
+      537 +  001_create_tables.sql      (enums + books table + auth table
+          +s)                                                            
+      538 +```                                                           
+      539 +                                                              
+      540 +Apply manually:                                               
+      541 +                                                              
+      542 +- **Local:** `psql -f src/migrations/000_create_db.sql && psql
+          + -d family_books -f src/migrations/001_create_tables.sql`     
+      543 +- **Production:** Same files applied via deployment script    
+      544 +                                                              
+      545 +---                                                           
+      546 +                                                              
+      547 +## 14. Environment Configuration                              
+      548 +                                                              
+      549 +**`.env.local`**                                              
+      550 +                                                              
+      551 +```                                                           
+      552 +DATABASE_URL=                                                 
+      553 +BETTER_AUTH_SECRET=                                           
+      554 +BETTER_AUTH_URL=                                              
+      555 +```                                                           
+      556 +                                                              
+      557 +**Vercel:**                                                   
+      558 +                                                              
+      559 +- Set same env vars in dashboard                              
+      560 +- Use production Postgres URL                                 
+      561 +                                                              
+      562 +---                                                           
+      563 +                                                              
+      564 +## 15. Error Handling Strategy                                
+      565 +                                                              
+      566 +- Zod → validation errors (400 response with issue details)   
+      567 +- Database errors → 500 response with generic message         
+      568 +- Duplicate detection → preview stage, not runtime failure    
+      569 +- Insert uses `ON CONFLICT DO NOTHING` as safety net          
+      570 +- All Route Handlers wrapped in `try/catch`                   
+      571 +                                                              
+      572 +---                                                           
+      573 +                                                              
+      574 +## 16. Testing Strategy (Recommended)                         
+      575 +                                                              
+      576 +- Unit tests for parsers                                      
+      577 +- Duplicate detection tests                                   
+      578 +- SQL integration tests (optional)                            
+      579 +- Fixture TXT files for Kindle/Audible (`kindle-01.txt` exists
+          + as sample data)                                              
+      580 +                                                              
+      581 +---                                                           
+      582 +                                                              
+      583 +## 17. Performance Considerations                             
+      584 +                                                              
+      585 +- 5,000 records trivial for Postgres                          
+      586 +- Bulk import:                                                
+      587 +  - Uses single `INSERT` with multiple value rows             
+      588 +  - `ON CONFLICT DO NOTHING` handles race conditions          
+      589 +  - Wrapped in transaction with rollback on error             
+      590 +                                                              
+      591 +---                                                           
+      592 +                                                              
+      593 +## 18. Future Extensibility                                   
+      594 +                                                              
+      595 +Designed to support:                                          
+      596 +                                                              
+      597 +- Multiple families (add `family_id` column)                  
+      598 +- Spending analytics                                          
+      599 +- CSV export                                                  
+      600 +- Soft deletes                                                
+      601 +- File uploads instead of paste                               
+      602 +- Per-user visibility                                         
+      603 +                                                              
+      604 +## 19. Implementation Progress                                
+      605 +                                                              
+      606 +### Completed                                                 
+      607 +                                                              
+      608 +- [x] Project scaffolding (Next.js 16 + Tailwind v4 + TypeScri
+          +pt 5.9)                                                       
+      609 +- [x] Database schema (enums, books table, auth tables)       
+      610 +- [x] Database connection layer (`lib/db.ts`)                 
+      611 +- [x] Kindle text parser with series/description/owner extract
+          +ion                                                           
+      612 +- [x] Image JSON parser for Amazon cover URLs                 
+      613 +- [x] Duplicate detection query                               
+      614 +- [x] Bulk insert with transaction + conflict handling        
+      615 +- [x] Import API route with Zod validation                    
+      616 +- [x] Import UI page (parse + preview + confirm)              
+      617 +- [x] Sample data files (`kindle-01.txt`, `kindle-01-images.js
+          +on`)                                                          
+      618 +                                                              
+      619 +### Not Yet Started                                           
+      620 +                                                              
+      621 +- [ ] better-auth integration (library install + config + rout
+          +es)                                                           
+      622 +- [ ] Login page                                              
+      623 +- [ ] Dashboard page                                          
+      624 +- [ ] Books list page with filtering                          
+      625 +- [ ] Create/edit book forms                                  
+      626 +- [ ] Server Actions for CRUD                                 
+      627 +- [ ] Tags system                                             
+      628 +- [ ] Audible parser                                          
+      629 +- [ ] Database indexes                                        
+      630 +- [ ] Component library (`components/` directory)             
+
+● Updated SPEC.MD with the following changes:
+
+  - Section 3.2 — Books schema now reflects actual implementation: SERIAL id
+  (not UUID), PostgreSQL enums for book_type and owner, 5-field composite unique
+   constraint (includes book_type)
+  - Section 5.1 — Folder structure shows what actually exists vs what's planned
+  - Section 6 — Added queries/books.ts documentation for checkDuplicates and
+  insertBooks
+  - Section 7 — Marked Server Actions as not yet implemented, renamed to
+  createBook/updateBook/deleteBook
+  - Section 8 — Fully documented the implemented Kindle import flow including
+  image support, owner detection logic, series extraction, and the discriminated
+   union API design
+  - Section 10.4 — Import page wireframe matches actual UI (two textareas,
+  preview tables)
+  - Section 11 — Documents actual Zod schemas in the route handler
+  - Section 12 — Updated index names from purchases to books
+  - Section 19 — Replaced "Open Questions" with an implementation progress
+  checklist showing completed vs remaining work
+
+✻ Crunched for 2m 50s
+
+> you had recommended 2 approaches to get images from import file 
+
+● Searched memories, searched for 6 patterns, read 2 files (ctrl+o to expand)
+
+● I can't find a prior conversation where two image approaches were discussed —
+  the transcript files don't contain any discussion about image strategies. This
+   may have been in a session that wasn't saved, or on a different machine.
+
+  Can you remind me what the two approaches were? Based on the current code, I
+  can see one approach is already implemented (pasting a JSON array of Amazon
+  cover URLs scraped from the browser console). Was the other approach something
+   like using the Open Library / Google Books API to look up covers by
+  title/author?
+
+✻ Sautéed for 46s
+
+> the second approach was about getting all the import attributes from the  
+  generated html                                                            
+
+● Got it — so the two approaches for Kindle import are:
+
+  1. Text + Images JSON (current implementation) — paste raw text from the
+  Kindle library page + optionally paste a separate JSON array of image URLs
+  scraped via browser console
+  2. HTML parsing — scrape/copy the rendered HTML from the Kindle library page
+  and extract all attributes (title, author, date, owner, image URLs) from the
+  DOM structure in one shot
+
+  The HTML approach would be simpler for the user (one paste instead of two) and
+   more reliable since the data is structured in the DOM rather than requiring
+  positional matching of images to books.
+
+  Want me to:
+  1. Build the HTML parser alongside the existing text parser (keep both
+  options)?
+  2. Replace the text parser with the HTML parser?
+
+  Either way, I'd need a sample of the Kindle library page HTML to build the
+  parser. Can you save the page source or copy the relevant HTML section?
+
+> the html can be found in @generated.html  
+
+● Searched for 6 patterns, read 1 file (ctrl+o to expand)
+
+● The file is 1.1MB but grep is finding nothing — might be encoding. Let me
+  check.
+
+● Read 1 file (ctrl+o to expand)
+
+● Good, I can see the HTML structure clearly. Let me look at a couple more
+  entries to see variations (e.g., "Shared with" vs "Acquired by").
+
+● Searched for 1 pattern (ctrl+o to expand)
+
+● Now I have the full pattern. The HTML structure is very consistent:
+
+  - id="content-image-{ASIN}" → <img src="...">
+  - id="content-title-{ASIN}" → <div role="heading"> with title
+  - id="content-author-{ASIN}" → author text
+  - id="content-acquired-date-{ASIN}" → date
+  - Either Acquired by X or id="content-shared-{ASIN}" with Shared with X
+
+  Let me count the total books and check the image format.
+
+● Searched for 3 patterns (ctrl+o to expand)
+
+● 25 books, all data readily extractable. Now I'll build the HTML parser. I need
+   an HTML parsing library since this runs server-side in Node.
+
+● Bash(cd /c/Users/tverk/wrksp/claude-code && npm install node-html-parser)
+  ⎿  C:\Users\tverk\AppData\Roaming\npm/node_modules/node/bin/node: line 1:
+      This: command not found
+     npm warn ERESOLVE overriding peer dependency
+     … +76 lines (ctrl+o to expand)
+
+● Already installed. Now let me build the HTML parser and update the import
+  flow.
+
+● Read 1 file (ctrl+o to expand)
+
+● Now I'll create the HTML parser that reuses the shared helper functions, then
+  update the route and UI.
+  ⎿  Error editing file
+
+● Update(src\lib\parsing\kindle-parser.ts)
+  ⎿  Added 2 lines
+      1 +import { parse as parseHTML } from "node-html-parser";          
+      2 +                                                                
+      3  export type ParsedBook = {
+      4    bookType: "KINDLE" | "AUDIBLE" | "TECHNICAL";
+      5    title: string;
+
+● Now add the upgradeImageUrl helper and the parseKindleHtml function at the end
+   of the file.
+
+● Update(src\lib\parsing\kindle-parser.ts)
+  ⎿  Added 7 lines
+      162    return d.toISOString().split("T")[0];
+      163  }
+      164  
+      165 +/**                                                           
+      166 + * Upgrade image URL from SX150 to SX300 for better quality.  
+      167 + */                                                           
+      168 +function upgradeImageUrl(url: string): string {               
+      169 +  return url.replace(/\.SX\d+\./, ".SX300.");                 
+      170 +}                                                             
+      171 +                                                              
+      172  const DEFAULT_IMAGE = "https://via.placeholder.com/150x226/1EC
+           BE1/ffffff";
+      173  
+      174  /**
+
+● Now add the HTML parser at the end of the file.
+
+● Update(src\lib\parsing\kindle-parser.ts)
+  ⎿  Added 70 lines
+      292  
+      293    return books;
+      294  }
+      295 +                                                              
+      296 +/**                                                           
+      297 + * Parse Kindle library HTML (from "Manage Your Content" page 
+          +source) into structured book records.                         
+      298 + * Extracts title, authors, image, date, and owner directly fr
+          +om DOM structure.                                             
+      299 + */                                                           
+      300 +export function parseKindleHtml(html: string): ParsedBook[] { 
+      301 +  const root = parseHTML(html);                               
+      302 +  const books: ParsedBook[] = [];                             
+      303 +                                                              
+      304 +  // Each book lives in a div with class containing "DigitalEn
+          +titySummary-module__container"                                
+      305 +  const containers = root.querySelectorAll('[class*="DigitalEn
+          +titySummary-module__container"]');                            
+      306 +                                                              
+      307 +  for (const container of containers) {                       
+      308 +    // Title: div[id^="content-title-"] > div[role="heading"] 
+      309 +    const titleEl = container.querySelector('[id^="content-tit
+          +le-"] [role="heading"]');                                     
+      310 +    if (!titleEl) continue;                                   
+      311 +    const rawTitle = titleEl.text.trim();                     
+      312 +    if (!rawTitle) continue;                                  
+      313 +                                                              
+      314 +    // Authors: div[id^="content-author-"]                    
+      315 +    const authorEl = container.querySelector('[id^="content-au
+          +thor-"]');                                                    
+      316 +    const authors = authorEl?.text.trim() ?? "";              
+      317 +    if (!authors) continue;                                   
+      318 +                                                              
+      319 +    // Image: div[id^="content-image-"] img                   
+      320 +    const imgEl = container.querySelector('[id^="content-image
+          +-"] img');                                                    
+      321 +    const rawImageUrl = imgEl?.getAttribute("src") ?? "";     
+      322 +    const image = rawImageUrl ? upgradeImageUrl(rawImageUrl) :
+          + DEFAULT_IMAGE;                                               
+      323 +                                                              
+      324 +    // Date: div[id^="content-acquired-date-"]                
+      325 +    const dateEl = container.querySelector('[id^="content-acqu
+          +ired-date-"]');                                               
+      326 +    const dateText = dateEl?.text.trim() ?? "";               
+      327 +    const dateMatch = dateText.match(/Acquired on\s+(.+)/i);  
+      328 +    const purchaseDate = dateMatch ? parseDate(dateMatch[1]) :
+          + "";                                                          
+      329 +    if (!purchaseDate) continue;                              
+      330 +                                                              
+      331 +    // Owner: "Acquired by X" or "Shared with X" in an informa
+          +tion_row                                                      
+      332 +    let owner: "tverkon" | "dverkon" = "tverkon";             
+      333 +    const infoRows = container.querySelectorAll(".information_
+          +row");                                                        
+      334 +    for (const row of infoRows) {                             
+      335 +      const text = row.text.trim();                           
+      336 +      const ownerResult = resolveOwner(text);                 
+      337 +      if (ownerResult !== null) {                             
+      338 +        owner = ownerResult;                                  
+      339 +        break;                                                
+      340 +      }                                                       
+      341 +    }                                                         
+      342 +                                                              
+      343 +    const series = extractSeries(rawTitle);                   
+      344 +    const description = extractDescription(rawTitle, series); 
+      345 +    const cleaned = cleanTitle(rawTitle, series);             
+      346 +    const sortableTitle = makeSortableTitle(rawTitle, series);
+      347 +    const searchableContent = `${rawTitle} ${authors}`.toLower
+          +Case();                                                       
+      348 +                                                              
+      349 +    books.push({                                              
+      350 +      bookType: "KINDLE",                                     
+      351 +      title: cleaned,                                         
+      352 +      description,                                            
+      353 +      image,                                                  
+      354 +      authors,                                                
+      355 +      owner,                                                  
+      356 +      purchaseDate,                                           
+      357 +      sortableTitle,                                          
+      358 +      searchableContent,                                      
+      359 +      series,                                                 
+      360 +    });                                                       
+      361 +  }                                                           
+      362 +                                                              
+      363 +  return books;                                               
+      364 +}                                                             
+
+● Now update the API route to support HTML parsing.
+
+● Update(src\app\api\import\route.ts)
+  ⎿  Added 2 lines, removed 1 line
+       1  import { NextRequest, NextResponse } from "next/server";
+       2  import { z } from "zod";
+       3 -import { parseKindleText, parseImageJson } from "@/lib/parsing/
+         -kindle-parser";                                                
+       3 +import { parseKindleText, parseImageJson, parseKindleHtml } fro
+         +m "@/lib/parsing/kindle-parser";                               
+       4  import { checkDuplicates, insertBooks } from "@/lib/queries/boo
+          ks";
+       5  
+       6  const parseSchema = z.object({
+       7    action: z.literal("parse"),
+       8 +  format: z.enum(["text", "html"]).default("text"),            
+       9    rawText: z.string().min(1, "Text is required"),
+      10    imagesJson: z.string().optional(),
+      11  });
+
+● Update(src\app\api\import\route.ts)
+  ⎿  Added 7 lines, removed 2 lines
+      36      const parsed = requestSchema.parse(body);
+      37  
+      38      if (parsed.action === "parse") {
+      39 -      const images = parsed.imagesJson ? parseImageJson(parsed.
+         -imagesJson) : [];                                              
+      40 -      const books = parseKindleText(parsed.rawText, images);   
+      39 +      let books;                                               
+      40 +      if (parsed.format === "html") {                          
+      41 +        books = parseKindleHtml(parsed.rawText);               
+      42 +      } else {                                                 
+      43 +        const images = parsed.imagesJson ? parseImageJson(parse
+         +d.imagesJson) : [];                                            
+      44 +        books = parseKindleText(parsed.rawText, images);       
+      45 +      }                                                        
+      46        const { newBooks, duplicates } = await checkDuplicates(bo
+          oks);
+      47        return NextResponse.json({ newBooks, duplicates });
+      48      }
+
+● Now update the import page UI to support both formats.
+
+● Update(src\app\purchases\import\page.tsx)
+  ⎿  Added 9 lines, removed 1 line
+      20    duplicates: ParsedBook[];
+      21  };
+      22  
+      23 +type ImportFormat = "text" | "html";                           
+      24 +                                                               
+      25  export default function ImportPage() {
+      26 +  const [format, setFormat] = useState<ImportFormat>("html");  
+      27    const [rawText, setRawText] = useState("");
+      28    const [imagesJson, setImagesJson] = useState("");
+      29    const [parseResult, setParseResult] = useState<ParseResult | 
+          null>(null);
+     ...
+      41        const res = await fetch("/api/import", {
+      42          method: "POST",
+      43          headers: { "Content-Type": "application/json" },
+      41 -        body: JSON.stringify({ action: "parse", rawText, images
+         -Json: imagesJson || undefined }),                              
+      44 +        body: JSON.stringify({                                 
+      45 +          action: "parse",                                     
+      46 +          format,                                              
+      47 +          rawText,                                             
+      48 +          imagesJson: format === "text" ? (imagesJson || undefi
+         +ned) : undefined,                                              
+      49 +        }),                                                    
+      50        });
+      51  
+      52        if (!res.ok) {
+
+● Now update the UI form to add the format toggle and conditionally show the
+  images textarea.
+
+● Update(src\app\purchases\import\page.tsx)
+  ⎿  Added 49 lines, removed 16 lines
+       97      <div className="max-w-4xl mx-auto p-6">
+       98        <h1 className="text-2xl font-bold mb-6">Kindle Book Impo
+           rt</h1>
+       99  
+      100 -      {/* Textarea */}                                        
+      100 +      {/* Format toggle */}                                   
+      101 +      <div className="mb-4 flex gap-4">                       
+      102 +        <label className="flex items-center gap-2 cursor-point
+          +er">                                                          
+      103 +          <input                                              
+      104 +            type="radio"                                      
+      105 +            name="format"                                     
+      106 +            value="html"                                      
+      107 +            checked={format === "html"}                       
+      108 +            onChange={() => setFormat("html")}                
+      109 +            className="accent-blue-600"                       
+      110 +          />                                                  
+      111 +          <span className="text-sm font-medium">HTML (page sou
+          +rce)</span>                                                   
+      112 +        </label>                                              
+      113 +        <label className="flex items-center gap-2 cursor-point
+          +er">                                                          
+      114 +          <input                                              
+      115 +            type="radio"                                      
+      116 +            name="format"                                     
+      117 +            value="text"                                      
+      118 +            checked={format === "text"}                       
+      119 +            onChange={() => setFormat("text")}                
+      120 +            className="accent-blue-600"                       
+      121 +          />                                                  
+      122 +          <span className="text-sm font-medium">Plain text + I
+          +mages JSON</span>                                             
+      123 +        </label>                                              
+      124 +      </div>                                                  
+      125 +                                                              
+      126 +      {/* Main textarea */}                                   
+      127        <div className="mb-4">
+      128          <label htmlFor="kindle-text" className="block text-sm 
+           font-medium mb-2">
+      103 -          Paste Kindle library text                           
+      129 +          {format === "html"                                  
+      130 +            ? "Paste Kindle library page HTML"                
+      131 +            : "Paste Kindle library text"}                    
+      132          </label>
+      133          <textarea
+      134            id="kindle-text"
+      135            rows={12}
+      136            className="w-full border border-gray-300 rounded-lg 
+           p-3 font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:b
+           order-blue-500"
+      109 -          placeholder="Paste your Kindle content library text 
+          -here..."                                                      
+      137 +          placeholder={format === "html"                      
+      138 +            ? "Paste the HTML source from your Kindle content 
+          +library page..."                                              
+      139 +            : "Paste your Kindle content library text here..."
+          +}                                                             
+      140            value={rawText}
+      141            onChange={(e) => setRawText(e.target.value)}
+      142          />
+      143        </div>
+      144  
+      115 -      <div className="mb-4">                                  
+      116 -        <label htmlFor="images-json" className="block text-sm 
+          -font-medium mb-2">                                            
+      117 -          Images JSON (optional — from browser console script)
+      118 -        </label>                                              
+      119 -        <textarea                                             
+      120 -          id="images-json"                                    
+      121 -          rows={4}                                            
+      122 -          className="w-full border border-gray-300 rounded-lg 
+          -p-3 font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:b
+          -order-blue-500"                                               
+      123 -          placeholder='Paste the JSON array from the browser c
+          -onsole script...'                                             
+      124 -          value={imagesJson}                                  
+      125 -          onChange={(e) => setImagesJson(e.target.value)}     
+      126 -        />                                                    
+      127 -      </div>                                                  
+      145 +      {/* Images JSON — only for text mode */}                
+      146 +      {format === "text" && (                                 
+      147 +        <div className="mb-4">                                
+      148 +          <label htmlFor="images-json" className="block text-s
+          +m font-medium mb-2">                                          
+      149 +            Images JSON (optional — from browser console scrip
+          +t)                                                            
+      150 +          </label>                                            
+      151 +          <textarea                                           
+      152 +            id="images-json"                                  
+      153 +            rows={4}                                          
+      154 +            className="w-full border border-gray-300 rounded-l
+          +g p-3 font-mono text-sm focus:ring-2 focus:ring-blue-500 focus
+          +:border-blue-500"                                             
+      155 +            placeholder='Paste the JSON array from the browser
+          + console script...'                                           
+      156 +            value={imagesJson}                                
+      157 +            onChange={(e) => setImagesJson(e.target.value)}   
+      158 +          />                                                  
+      159 +        </div>                                                
+      160 +      )}                                                      
+      161  
+      162        <button
+      163          onClick={handleParse}
+
+● Now let me verify it compiles.
+
+● Bash(cd /c/Users/tverk/wrksp/claude-code && npx tsc --noEmit 2>&1)
+  ⎿  C:\Users\tverk\AppData\Roaming\npm/node_modules/node/bin/node: line 1:
+      This: command not found
+  ⎿  (timeout 30s)
+
+● Clean compile. Let me do a quick test of the HTML parser against the sample
+  file.
+
+● Bash(cd /c/Users/tverk/wrksp/claude-code && npx tsx -e "
+      const fs = require('fs');…)
+  ⎿  C:\Users\tverk\AppData\Roaming\npm/node_modules/node/bin/node: line 1:
+      This: command not found
+  ⎿  (timeout 15s)
+
+● Bash(cd /c/Users/tverk/wrksp/claude-code && node --loader tsx -e "
+      import fs from 'fs';…)
+  ⎿  Error: Exit code 1
+     C:\Users\tverk\AppData\Roaming\npm/node_modules/node/bin/node: line 1: 
+     This: command not found
+
+     node:internal/modules/run_main:105
+         triggerUncaughtException(
+         ^
+     Error: tsx must be loaded with --import instead of --loader
+     The --loader flag was deprecated in Node v20.6.0 and v18.19.0
+         at initialize (file:///C:/Users/tverk/wrksp/claude-code/node_modules/ts
+     x/dist/esm/index.mjs:1:985)
+         at Hooks.addCustomLoader (node:internal/modules/esm/hooks:183:24)
+
+     … +22 lines (ctrl+o to see all)
+
+● Bash(cd /c/Users/tverk/wrksp/claude-code && node --import tsx -e "
+      import fs from 'fs';…)
+  ⎿  Error: Exit code 1
+     C:\Users\tverk\AppData\Roaming\npm/node_modules/node/bin/node: line 1: 
+     This: command not found
+     file:///C:/Users/tverk/wrksp/claude-code/[eval1]:3
+     import { parseKindleHtml } from './src/lib/parsing/kindle-parser.js';
+              ^^^^^^^^^^^^^^^
+     SyntaxError: The requested module './src/lib/parsing/kindle-parser.js' does
+      not provide an export named 'parseKindleHtml'
+         at #_instantiate (node:internal/modules/esm/module_job:254:21)
+         at async ModuleJob.run (node:internal/modules/esm/module_job:362:5)
+         at async onImport.tracePromise.__proto__ 
+     (node:internal/modules/esm/loader:270:26)
+         at async ModuleLoader.executeModuleJob 
+     (node:internal/modules/esm/loader:267:20)
+
+     … +16 lines (ctrl+o to see all)
+
+● Let me write a quick test script instead.
+
+● Write(test-html-parser.ts)
+  ⎿  Wrote 20 lines to test-html-parser.ts
+       1 import fs from "fs";
+       2 import { parseKindleHtml } from "./src/lib/parsing/kindle-parser
+         ";
+       3 
+       4 const html = fs.readFileSync("generated.html", "utf-8");
+       5 const books = parseKindleHtml(html);
+       6 
+       7 console.log("Total books parsed:", books.length);
+       8 console.log();
+       9 
+      10 for (let i = 0; i < books.length; i++) {
+     … +10 lines (ctrl+o to expand)
+
+● Bash(cd /c/Users/tverk/wrksp/claude-code && npx tsx test-html-parser.ts 2>&1)
+  ⎿  C:\Users\tverk\AppData\Roaming\npm/node_modules/node/bin/node: line 1:
+      This: command not found
+     Total books parsed: 25
+     … +94 lines (ctrl+o to expand)
+  ⎿  (timeout 15s)
+
+● All 25 books parsed successfully with images, owners, dates, series, and
+  descriptions. A few titles have newlines in them from the HTML formatting
+  (books 10, 18, 20, 21, 22). Let me fix that.
+
+● Update(src\lib\parsing\kindle-parser.ts)
+  ⎿  Added 1 line, removed 1 line
+      308      // Title: div[id^="content-title-"] > div[role="heading"]
+      309      const titleEl = container.querySelector('[id^="content-tit
+           le-"] [role="heading"]');
+      310      if (!titleEl) continue;
+      311 -    const rawTitle = titleEl.text.trim();                     
+      311 +    const rawTitle = titleEl.text.replace(/\s+/g, " ").trim();
+      312      if (!rawTitle) continue;
+      313  
+      314      // Authors: div[id^="content-author-"]
+
+● Bash(cd /c/Users/tverk/wrksp/claude-code && npx tsx test-html-parser.ts 2>&1 |
+       grep -E "^\d+\.|Series:|Desc:")
+  ⎿  C:\Users\tverk\AppData\Roaming\npm/node_modules/node/bin/node: line 1:
+      This: command not found
+        Series: The Crime and Passion Stalk City Hall Book 1
+     … +28 lines (ctrl+o to expand)
+  ⎿  (timeout 15s)
+
+● Titles are clean now. There's one edge case — book #5 "Critical Doubt" has a
+  malformed title with nested parens: Critical Doubt (Off the Grid (Off the 
+  Grid: FBI Series Book 7). That's from the source data itself, not a parser
+  bug.
+
+  Let me clean up the test file and verify TypeScript compiles.
+
+● Bash(cd /c/Users/tverk/wrksp/claude-code && rm test-html-parser.ts && npx tsc
+      --noEmit 2>&1)
+  ⎿  C:\Users\tverk\AppData\Roaming\npm/node_modules/node/bin/node: line 1:
+      This: command not found
+  ⎿  (timeout 30s)
+
+● Clean compile. Here's what was done:
+
+  HTML parser added (parseKindleHtml in kindle-parser.ts):
+  - Parses the Kindle "Manage Your Content" page HTML directly
+  - Extracts all attributes from DOM structure: title, authors, image, date,
+  owner
+  - Images are upgraded from SX150 to SX300 resolution automatically
+  - Uses the same extractSeries, cleanTitle, extractDescription,
+  makeSortableTitle, resolveOwner helpers as the text parser
+  - Normalizes whitespace in titles (collapses newlines from HTML formatting)
+
+  API route updated — accepts format: "text" | "html" field (defaults to "text")
+
+  Import page updated — radio toggle to switch between HTML and plain text
+  modes. HTML is the default. The Images JSON textarea only shows in text mode.
+
+  Test results: All 25 books from generated.html parsed correctly with images,
+  owners, series, and descriptions — single paste, no separate images step
+  needed.
+
+✻ Sautéed for 4m 20s
+
+> I would now like to create a pageable view of books. Each book would be   
+  displayed as a card with image at top and title, authors, series below.   
+  use tailwind for styling. use web search for latest web page styling      
+  trends using tailwindcss. Site should be mobile friendly                  
+
+● 2 agents launched (ctrl+o to expand)
+   ├─ Agent (Research Tailwind card design trends)
+   │  ⎿  Running in the background
+   └─ Explore (Check existing queries and DB schema)
+      ⎿  Running in the background
+
+● Researching current Tailwind styling trends and reviewing the existing
+  codebase. I'll start building once both complete.
+
+● Agent(Check Tailwind research status) resuming a03d3ea3dbb7d3e1b
+  ⎿  Initializing…
+  ⎿  Error: Cannot resume agent a03d3ea3dbb7d3e1b: it is still running. Use 
+     TaskStop to stop it first, or wait for it to complete.
+
+● I'll wait for both agents to complete before proceeding.
+
+● Agent "Check existing queries and DB schema" completed
+
+● Good, I have the codebase context. Let me check on the Tailwind research.
+
+● Agent(Check Tailwind research status) resuming a03d3ea3dbb7d3e1b
+  ⎿  Initializing…
+  ⎿  Error: Cannot resume agent a03d3ea3dbb7d3e1b: it is still running. Use 
+     TaskStop to stop it first, or wait for it to complete.
+
+● Still running — I'll start building with what I know while it finishes. Let me
+   begin with the query function and the books page.
+
+● Read 1 file (ctrl+o to expand)
+
+● Update(src\lib\queries\books.ts)
+  ⎿  Added 51 lines
+       1  import { pool } from "../db";
+       2  import type { ParsedBook } from "../parsing/kindle-parser";
+       3  
+       4 +export type BookRow = {                                        
+       5 +  id: number;                                                  
+       6 +  book_type: string;                                           
+       7 +  title: string;                                               
+       8 +  description: string | null;                                  
+       9 +  image: string;                                               
+      10 +  owner: string;                                               
+      11 +  readers: string;                                             
+      12 +  series: string | null;                                       
+      13 +  authors: string;                                             
+      14 +  sortable_title: string;                                      
+      15 +  purchase_date: string;                                       
+      16 +  created_at: string;                                          
+      17 +};                                                             
+      18 +                                                               
+      19 +export type BooksPage = {                                      
+      20 +  books: BookRow[];                                            
+      21 +  total: number;                                               
+      22 +  page: number;                                                
+      23 +  pageSize: number;                                            
+      24 +  totalPages: number;                                          
+      25 +};                                                             
+      26 +                                                               
+      27 +/**                                                            
+      28 + * Fetch a paginated list of books, ordered by sortable_title. 
+      29 + */                                                            
+      30 +export async function getBooks(page = 1, pageSize = 24): Promis
+         +e<BooksPage> {                                                 
+      31 +  const offset = (page - 1) * pageSize;                        
+      32 +                                                               
+      33 +  const [countResult, booksResult] = await Promise.all([       
+      34 +    pool.query("SELECT COUNT(*) FROM books"),                  
+      35 +    pool.query(                                                
+      36 +      `SELECT id, book_type, title, description, image, owner, 
+         +readers, series, authors, sortable_title, purchase_date, create
+         +d_at                                                           
+      37 +       FROM books                                              
+      38 +       ORDER BY sortable_title ASC                             
+      39 +       LIMIT $1 OFFSET $2`,                                    
+      40 +      [pageSize, offset]                                       
+      41 +    ),                                                         
+      42 +  ]);                                                          
+      43 +                                                               
+      44 +  const total = parseInt(countResult.rows[0].count, 10);       
+      45 +                                                               
+      46 +  return {                                                     
+      47 +    books: booksResult.rows,                                   
+      48 +    total,                                                     
+      49 +    page,                                                      
+      50 +    pageSize,                                                  
+      51 +    totalPages: Math.ceil(total / pageSize),                   
+      52 +  };                                                           
+      53 +}                                                              
+      54 +                                                               
+      55  export type DuplicateCheckResult = {
+      56    newBooks: ParsedBook[];
+      57    duplicates: ParsedBook[];
+
+● Now create the books listing page. I'll build it as a Server Component with
+  pagination via search params.
+
+● Read 1 file (ctrl+o to expand)
+
+● Write(src\app\books\page.tsx)
+  ⎿  Wrote 46 lines to src\app\books\page.tsx
+       1 import { getBooks } from "@/lib/queries/books";
+       2 import { BookGrid } from "./book-grid";
+       3 import { Pagination } from "./pagination";
+       4 
+       5 export default async function BooksPage({
+       6   searchParams,
+       7 }: {
+       8   searchParams: Promise<{ page?: string }>;
+       9 }) {
+      10   const params = await searchParams;
+     … +36 lines (ctrl+o to expand)
+
+● Write(src\app\books\book-grid.tsx)
+  ⎿  Wrote 67 lines to src\app\books\book-grid.tsx
+       1 import type { BookRow } from "@/lib/queries/books";
+       2 
+       3 function ownerLabel(owner: string): string {
+       4   if (owner === "tverkon") return "Tom";
+       5   if (owner === "dverkon") return "Denise";
+       6   return owner;
+       7 }
+       8 
+       9 function typeLabel(bookType: string): string {
+      10   if (bookType === "KINDLE") return "Kindle";
+     … +57 lines (ctrl+o to expand)
+
+● Write(src\app\books\pagination.tsx)
+  ⎿  Wrote 102 lines to src\app\books\pagination.tsx
+       1 import Link from "next/link";
+       2 
+       3 export function Pagination({
+       4   page,
+       5   totalPages,
+       6 }: {
+       7   page: number;
+       8   totalPages: number;
+       9 }) {
+      10   const pages = getPageNumbers(page, totalPages);
+     … +92 lines (ctrl+o to expand)
+
+● Now update the home page to redirect to books.
+
+● Read 1 file (ctrl+o to expand)
+
+● Write(src\app\page.tsx)
+  ⎿  Added 5 lines, removed 7 lines
+      1 -export default function Home() {                               
+      2 -  return (                                                     
+      3 -    <div className="flex min-h-screen items-center justify-cente
+        -r">                                                            
+      4 -      <h1 className="text-4xl font-bold">Hello World</h1>      
+      5 -    </div>                                                     
+      6 -  );                                                           
+      7 -}                                                              
+      1 +import { redirect } from "next/navigation";                     
+      2 +                                                                
+      3 +export default function Home() {                                
+      4 +  redirect("/books");                                           
+      5 +}                                                               
+
+● Update the layout metadata.
+
+● Read 1 file (ctrl+o to expand)
+
+● Update(src\app\layout.tsx)
+  ⎿  Added 2 lines, removed 2 lines
+      13  });
+      14  
+      15  export const metadata: Metadata = {
+      16 -  title: "Create Next App",                                    
+      17 -  description: "Generated by create next app",                 
+      16 +  title: "Family Books",                                       
+      17 +  description: "Family digital book library",                  
+      18  };
+      19  
+      20  export default function RootLayout({
+
+● Now let me check TypeScript compiles.
+
+● Bash(cd /c/Users/tverk/wrksp/claude-code && npx tsc --noEmit 2>&1)
+  ⎿  C:\Users\tverk\AppData\Roaming\npm/node_modules/node/bin/node: line 1:
+      This: command not found
+  ⎿  (timeout 30s)
+
+● Clean compile. Let me check on the Tailwind research now.
+
+● Agent(Get Tailwind research results) resuming a03d3ea3dbb7d3e1b
+  ⎿  Initializing…
+  ⎿  Error: Cannot resume agent a03d3ea3dbb7d3e1b: it is still running. Use 
+     TaskStop to stop it first, or wait for it to complete.
+
+● Read 1 file (ctrl+o to expand)
+
+● The research agent is still working. The implementation is already solid
+  though — let me verify the line-clamp utility works with Tailwind v4 (it's
+  built-in since v3.3).
+
+  Let me also check the globals.css to make sure there's nothing that would
+  interfere.
+
+● Read 1 file (ctrl+o to expand)
+
+● The dark mode would make the cards look odd with white backgrounds on dark
+  body. Let me update the books page to work with both modes, or keep the page
+  explicitly light for now.
+
+  The bg-gray-50 on <main> will override the body background for the books page,
+   so it will look fine. The card design already uses explicit colors.
+
+  Let me do a final review of all the new files.
+
+● Read 1 file (ctrl+o to expand)
+
+● Everything looks good. Here's what was built:
+
+  New files:
+
+  - src/app/books/page.tsx — Server Component that fetches paginated books from
+  DB via search params (/books?page=2). Sticky header with title and total
+  count. Empty state links to import page.
+  - src/app/books/book-grid.tsx — Responsive card grid:
+    - Mobile: 2 columns
+    - Small: 3 columns
+    - Medium: 4 columns
+    - Large: 5 columns
+    - XL: 6 columns
+    - Each card: cover image (2:3 aspect ratio) with hover zoom, title (2-line
+  clamp), authors (1-line clamp), series in indigo, type badge (color-coded:
+  blue/Kindle, orange/Audible, green/Technical), owner name
+  - src/app/books/pagination.tsx — Page navigation with prev/next, numbered
+  pages with ellipsis for large ranges, active page highlighted in blue
+
+  Updated files:
+
+  - src/lib/queries/books.ts — added getBooks(page, pageSize) query returning
+  paginated results ordered by sortable_title
+  - src/app/page.tsx — redirects / to /books
+  - src/app/layout.tsx — updated metadata title to "Family Books"
+
+  24 books per page, cards have subtle hover shadow/border transitions. All
+  mobile-friendly with responsive breakpoints.
+
+✻ Baked for 1m 44s
+
+● Agent "Research Tailwind card design trends" completed
+
+● Good timing — the research confirms the patterns I used and suggests a few
+  enhancements. Let me apply the best ones:
+
+  1. group-hover on image — already done
+  2. motion-reduce: accessibility — should add
+  3. Hover lift effect (hover:-translate-y-1) — nice touch
+  4. Mobile pagination — hide page numbers on mobile, show "Page X of Y"
+
+● Read 1 file (ctrl+o to expand)
+
+● Update(src\app\books\book-grid.tsx)
+  ⎿  Added 1 line, removed 1 line
+      26        {books.map((book) => (
+      27          <div
+      28            key={book.id}
+      29 -          className="group bg-white rounded-xl shadow-sm border
+         - border-gray-200 overflow-hidden hover:shadow-md hover:border-g
+         -ray-300 transition-all duration-200"                           
+      29 +          className="group bg-white rounded-xl shadow-sm border
+         + border-gray-200 overflow-hidden hover:shadow-md hover:border-g
+         +ray-300 hover:-translate-y-1 transition-all duration-200 motion
+         +-reduce:transition-none motion-reduce:hover:translate-y-0"     
+      30          >
+      31            {/* Cover image */}
+      32            <div className="aspect-[2/3] bg-gray-100 overflow-hid
+          den">
+
+● Update(src\app\books\book-grid.tsx)
+  ⎿  Added 1 line, removed 1 line
+      33              <img
+      34                src={book.image}
+      35                alt={book.title}
+      36 -              className="w-full h-full object-cover group-hover
+         -:scale-105 transition-transform duration-300"                  
+      36 +              className="w-full h-full object-cover group-hover
+         +:scale-105 transition-transform duration-300 motion-reduce:tran
+         +sition-none motion-reduce:group-hover:scale-100"               
+      37                loading="lazy"
+      38              />
+      39            </div>
+
+● Now improve the pagination for mobile — show "Page X of Y" on small screens,
+  numbered pages on larger.
+
+● Read 1 file (ctrl+o to expand)
+
+● Update(src\app\books\pagination.tsx)
+  ⎿  Added 30 lines, removed 23 lines
+      25          </span>
+      26        )}
+      27  
+      28 -      {/* Page numbers */}                                     
+      29 -      {pages.map((p, i) =>                                     
+      30 -        p === "..." ? (                                        
+      31 -          <span key={`ellipsis-${i}`} className="px-2 py-2 text
+         --sm text-gray-400">                                            
+      32 -            ...                                                
+      33 -          </span>                                              
+      34 -        ) : p === page ? (                                     
+      35 -          <span                                                
+      36 -            key={p}                                            
+      37 -            className="px-3 py-2 text-sm font-semibold text-whi
+         -te bg-blue-600 rounded-lg min-w-[40px] text-center"            
+      38 -          >                                                    
+      39 -            {p}                                                
+      40 -          </span>                                              
+      41 -        ) : (                                                  
+      42 -          <Link                                                
+      43 -            key={p}                                            
+      44 -            href={`/books?page=${p}`}                          
+      45 -            className="px-3 py-2 text-sm font-medium text-gray-
+         -700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50
+         - transition-colors min-w-[40px] text-center"                   
+      46 -          >                                                    
+      47 -            {p}                                                
+      48 -          </Link>                                              
+      49 -        )                                                      
+      50 -      )}                                                       
+      28 +      {/* Mobile: "Page X of Y" */}                            
+      29 +      <span className="sm:hidden px-3 py-2 text-sm text-gray-50
+         +0">                                                            
+      30 +        Page {page} of {totalPages}                            
+      31 +      </span>                                                  
+      32  
+      33 +      {/* Desktop: numbered pages */}                          
+      34 +      <span className="hidden sm:contents">                    
+      35 +        {pages.map((p, i) =>                                   
+      36 +          p === "..." ? (                                      
+      37 +            <span key={`ellipsis-${i}`} className="px-2 py-2 te
+         +xt-sm text-gray-400">                                          
+      38 +              ...                                              
+      39 +            </span>                                            
+      40 +          ) : p === page ? (                                   
+      41 +            <span                                              
+      42 +              key={p}                                          
+      43 +              className="px-3 py-2 text-sm font-semibold text-w
+         +hite bg-blue-600 rounded-lg min-w-[40px] text-center"          
+      44 +            >                                                  
+      45 +              {p}                                              
+      46 +            </span>                                            
+      47 +          ) : (                                                
+      48 +            <Link                                              
+      49 +              key={p}                                          
+      50 +              href={`/books?page=${p}`}                        
+      51 +              className="px-3 py-2 text-sm font-medium text-gra
+         +y-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-
+         +50 transition-colors min-w-[40px] text-center"                 
+      52 +            >                                                  
+      53 +              {p}                                              
+      54 +            </Link>                                            
+      55 +          )                                                    
+      56 +        )}                                                     
+      57 +      </span>                                                  
+      58 +                                                               
+      59        {/* Next */}
+      60        {page < totalPages ? (
+      61          <Link
+
+● Bash(cd /c/Users/tverk/wrksp/claude-code && npx tsc --noEmit 2>&1)
+  ⎿  C:\Users\tverk\AppData\Roaming\npm/node_modules/node/bin/node: line 1:
+      This: command not found
+  ⎿  (timeout 30s)
+
+● Clean compile. Here's a summary of the enhancements from the Tailwind
+  research:
+
+  Applied from research:
+  - Hover lift effect — cards float up 4px on hover (hover:-translate-y-1) for a
+   modern feel
+  - motion-reduce: accessibility — all transitions and hover transforms are
+  disabled for users who prefer reduced motion
+  - Mobile pagination — on small screens, page numbers are replaced with a
+  compact "Page X of Y" label; numbered pages only show on sm: and up
+  - aspect-[2/3] — confirmed as the correct book cover ratio (already in place)
+  - line-clamp — confirmed as built-in for Tailwind v3.3+/v4 (already in place)
+
+  The page is ready to test at /books (or / which redirects there). You'll need
+  the DB running with some imported books to see the cards.
+
+✻ Cooked for 42s
+
+> default ordering of books should be on purchase date desc 
+
+● Update(src\lib\queries\books.ts)
+  ⎿  Added 1 line, removed 1 line
+      35      pool.query(
+      36        `SELECT id, book_type, title, description, image, owner, 
+          readers, series, authors, sortable_title, purchase_date, create
+          d_at
+      37         FROM books
+      38 -       ORDER BY sortable_title ASC                             
+      38 +       ORDER BY purchase_date DESC, sortable_title ASC         
+      39         LIMIT $1 OFFSET $2`,
+      40        [pageSize, offset]
+      41      ),
+
+● Done — books now sort by most recent purchase first, with sortable_title as a
+  tiebreaker for same-date entries.
+
+> Each bookType should have a distinctive very light hue to the card. re:   
+  Kindle = AliceBlue. Audible = Beige, Technical = LightGray                
+
+● Read 1 file (ctrl+o to expand)
+
+● Since these are named CSS colors (not standard Tailwind classes), I'll use
+  inline style for the card background.
+
+● Update(src\app\books\book-grid.tsx)
+  ⎿  Added 7 lines
+      20    return "bg-gray-100 text-gray-700";
+      21  }
+      22  
+      23 +function cardBgColor(bookType: string): string {               
+      24 +  if (bookType === "KINDLE") return "AliceBlue";               
+      25 +  if (bookType === "AUDIBLE") return "Beige";                  
+      26 +  if (bookType === "TECHNICAL") return "LightGray";            
+      27 +  return "white";                                              
+      28 +}                                                              
+      29 +                                                               
+      30  export function BookGrid({ books }: { books: BookRow[] }) {
+      31    return (
+      32      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-col
+          s-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-5">
+
+● Update(src\app\books\book-grid.tsx)
+  ⎿  Added 2 lines, removed 1 line
+      33        {books.map((book) => (
+      34          <div
+      35            key={book.id}
+      36 -          className="group bg-white rounded-xl shadow-sm border
+         - border-gray-200 overflow-hidden hover:shadow-md hover:border-g
+         -ray-300 hover:-translate-y-1 transition-all duration-200 motion
+         --reduce:transition-none motion-reduce:hover:translate-y-0"     
+      36 +          style={{ backgroundColor: cardBgColor(book.book_type)
+         + }}                                                            
+      37 +          className="group rounded-xl shadow-sm border border-g
+         +ray-200 overflow-hidden hover:shadow-md hover:border-gray-300 h
+         +over:-translate-y-1 transition-all duration-200 motion-reduce:t
+         +ransition-none motion-reduce:hover:translate-y-0"              
+      38          >
+      39            {/* Cover image */}
+      40            <div className="aspect-[2/3] bg-gray-100 overflow-hid
+          den">
+
+● Done. Each card now has a subtle background tint based on book type:
+  - Kindle — AliceBlue (#F0F8FF)
+  - Audible — Beige (#F5F5DC)
+  - Technical — LightGray (#D3D3D3)
