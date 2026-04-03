@@ -12,8 +12,10 @@ export type BookRow = {
   series: string | null;
   authors: string;
   sortable_title: string;
+  searchable_content: string;
   purchase_date: string;
   created_at: string;
+  updated_at: string;
 };
 
 export type BooksPage = {
@@ -33,7 +35,7 @@ export async function getBooks(page = 1, pageSize = 24): Promise<BooksPage> {
   const [countResult, booksResult] = await Promise.all([
     pool.query("SELECT COUNT(*) FROM books"),
     pool.query(
-      `SELECT id, book_type, title, description, image, owner, readers, series, authors, sortable_title, purchase_date, created_at
+      `SELECT id, book_type, title, description, image, owner, readers, series, authors, sortable_title, searchable_content, purchase_date, created_at, updated_at
        FROM books
        ORDER BY purchase_date DESC, sortable_title ASC
        LIMIT $1 OFFSET $2`,
@@ -106,6 +108,69 @@ export async function checkDuplicates(
   }
 
   return { newBooks, duplicates };
+}
+
+export type BookInput = {
+  bookType: string;
+  title: string;
+  description: string | null;
+  image: string;
+  owner: string;
+  authors: string;
+  sortableTitle: string;
+  searchableContent: string;
+  purchaseDate: string;
+  series: string | null;
+};
+
+/**
+ * Fetch a single book by ID.
+ */
+export async function getBookById(id: number): Promise<BookRow | null> {
+  const result = await pool.query(
+    `SELECT id, book_type, title, description, image, owner, readers, series, authors,
+            sortable_title, searchable_content, purchase_date, created_at, updated_at
+     FROM books WHERE id = $1`,
+    [id]
+  );
+  return result.rows[0] ?? null;
+}
+
+/**
+ * Create a single book.
+ */
+export async function createBook(data: BookInput): Promise<BookRow> {
+  const result = await pool.query(
+    `INSERT INTO books (book_type, title, description, image, owner, authors, sortable_title, searchable_content, purchase_date, series)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+     RETURNING *`,
+    [data.bookType, data.title, data.description, data.image, data.owner, data.authors, data.sortableTitle, data.searchableContent, data.purchaseDate, data.series]
+  );
+  return result.rows[0];
+}
+
+/**
+ * Update a book by ID.
+ */
+export async function updateBook(id: number, data: BookInput): Promise<BookRow | null> {
+  const result = await pool.query(
+    `UPDATE books
+     SET book_type = $1, title = $2, description = $3, image = $4, owner = $5,
+         authors = $6, sortable_title = $7, searchable_content = $8, purchase_date = $9,
+         series = $10, updated_at = NOW()
+     WHERE id = $11
+     RETURNING *`,
+    [data.bookType, data.title, data.description, data.image, data.owner, data.authors, data.sortableTitle, data.searchableContent, data.purchaseDate, data.series, id]
+  );
+  return result.rows[0] ?? null;
+}
+
+/**
+ * Delete a book by ID.
+ */
+export async function deleteBook(id: number): Promise<boolean> {
+  const result = await pool.query("DELETE FROM books WHERE id = $1", [id]);
+  return (result.rowCount ?? 0) > 0;
 }
 
 /**

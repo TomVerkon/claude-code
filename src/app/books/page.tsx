@@ -1,6 +1,8 @@
+import Link from "next/link";
 import { getBooks } from "@/lib/queries/books";
 import { BookGrid } from "./book-grid";
 import { Pagination } from "./pagination";
+import { UserNav } from "../user-nav";
 
 export default async function BooksPage({
   searchParams,
@@ -18,9 +20,18 @@ export default async function BooksPage({
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight">
             Family Books
           </h1>
-          <span className="text-sm text-gray-500">
-            {total} book{total !== 1 ? "s" : ""}
-          </span>
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-gray-500">
+              {total} book{total !== 1 ? "s" : ""}
+            </span>
+            <Link
+              href="/books/new"
+              className="bg-blue-600 text-white rounded px-3 py-1.5 text-sm font-medium hover:bg-blue-700"
+            >
+              + New Book
+            </Link>
+            <UserNav />
+          </div>
         </div>
       </header>
 

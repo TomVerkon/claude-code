@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { UserNav } from "../../user-nav";
 
 type ParsedBook = {
   bookType: "KINDLE" | "AUDIBLE" | "TECHNICAL";
@@ -95,7 +96,10 @@ export default function ImportPage() {
 
   return (
     <div className="max-w-4xl mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-6">Book Import</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold">Book Import</h1>
+        <UserNav />
+      </div>
 
       {/* Format toggle */}
       <div className="mb-4 flex gap-4 flex-wrap">

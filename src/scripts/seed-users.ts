@@ -2,9 +2,9 @@
  * Seed the two allowed users into the database.
  *
  * Usage:
- *   npx tsx src/scripts/seed-users.ts
+ *   npx tsx --env-file=.env src/scripts/seed-users.ts
  *
- * Set TVERKON_PASSWORD and DVERKON_PASSWORD environment variables.
+ * Reads TVERKON_PASSWORD and DVERKON_PASSWORD from .env file.
  * Passwords must be min 8 chars with uppercase, lowercase, digit, and special char.
  */
 import { auth } from "../lib/auth";
