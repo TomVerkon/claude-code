@@ -12,7 +12,7 @@ export const auth = betterAuth({
     user: {
       create: {
         before: async (user) => {
-          const allowed = ["tverkon@gmail.com", "dverkon@gmail.com"];
+          const allowed = [process.env.FIRST_EMAIL, process.env.SECOND_EMAIL];
           if (!allowed.includes(user.email)) {
             return false;
           }
