@@ -1,20 +1,20 @@
-"use client";
+'use client';
 
-import { useState } from "react";
-import { signIn } from "@/lib/auth-client";
-import { useRouter } from "next/navigation";
-import { validatePassword } from "@/lib/password";
+import { useState } from 'react';
+import { signIn } from '@/lib/auth-client';
+import { useRouter } from 'next/navigation';
+import { validatePassword } from '@/lib/password';
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError("");
+    setError('');
 
     const pwError = validatePassword(password);
     if (pwError) {
@@ -24,16 +24,18 @@ export default function LoginPage() {
 
     setLoading(true);
 
+    console.log(email, ', ', password);
+
     const result = await signIn.email({
       email,
       password,
     });
 
     if (result.error) {
-      setError(result.error.message ?? "Invalid email or password");
+      setError(result.error.message ?? 'Invalid email or password');
       setLoading(false);
     } else {
-      router.push("/books");
+      router.push('/books');
       router.refresh();
     }
   }
@@ -47,7 +49,10 @@ export default function LoginPage() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+            <label
+              htmlFor="email"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
               Email
             </label>
             <input
@@ -61,7 +66,10 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
+            <label
+              htmlFor="password"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
               Password
             </label>
             <input
@@ -74,16 +82,14 @@ export default function LoginPage() {
             />
           </div>
 
-          {error && (
-            <p className="text-red-600 text-sm">{error}</p>
-          )}
+          {error && <p className="text-red-600 text-sm">{error}</p>}
 
           <button
             type="submit"
             disabled={loading}
             className="w-full bg-blue-600 text-white rounded px-4 py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
           >
-            {loading ? "Signing in..." : "Sign in"}
+            {loading ? 'Signing in...' : 'Sign in'}
           </button>
         </form>
       </div>
