@@ -35,6 +35,7 @@ export default function LoginPage() {
       setError(result.error.message ?? 'Invalid email or password');
       setLoading(false);
     } else {
+      setLoading(false);
       router.push('/books');
       router.refresh();
     }
