@@ -70,15 +70,12 @@ export function BookForm({ book }: { book?: BookRow }) {
     }
   }
 
-  const inputClass = "w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500";
-  const labelClass = "block text-sm font-medium text-gray-700 mb-1";
-
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-          <label htmlFor="bookType" className={labelClass}>Type</label>
-          <select id="bookType" value={bookType} onChange={(e) => setBookType(e.target.value)} className={inputClass}>
+          <label htmlFor="bookType" className="form-label">Type</label>
+          <select id="bookType" value={bookType} onChange={(e) => setBookType(e.target.value)} className="form-input">
             <option value="KINDLE">Kindle</option>
             <option value="AUDIBLE">Audible</option>
             <option value="TECHNICAL">Technical</option>
@@ -86,8 +83,8 @@ export function BookForm({ book }: { book?: BookRow }) {
         </div>
 
         <div>
-          <label htmlFor="owner" className={labelClass}>Owner</label>
-          <select id="owner" value={owner} onChange={(e) => setOwner(e.target.value)} className={inputClass}>
+          <label htmlFor="owner" className="form-label">Owner</label>
+          <select id="owner" value={owner} onChange={(e) => setOwner(e.target.value)} className="form-input">
             <option value="tverkon">Tom</option>
             <option value="dverkon">Denise</option>
           </select>
@@ -95,33 +92,33 @@ export function BookForm({ book }: { book?: BookRow }) {
       </div>
 
       <div>
-        <label htmlFor="title" className={labelClass}>Title</label>
-        <input id="title" type="text" required value={title} onChange={(e) => setTitle(e.target.value)} className={inputClass} />
+        <label htmlFor="title" className="form-label">Title</label>
+        <input id="title" type="text" required value={title} onChange={(e) => setTitle(e.target.value)} className="form-input" />
       </div>
 
       <div>
-        <label htmlFor="authors" className={labelClass}>Authors</label>
-        <input id="authors" type="text" required value={authors} onChange={(e) => setAuthors(e.target.value)} className={inputClass} />
+        <label htmlFor="authors" className="form-label">Authors</label>
+        <input id="authors" type="text" required value={authors} onChange={(e) => setAuthors(e.target.value)} className="form-input" />
       </div>
 
       <div>
-        <label htmlFor="series" className={labelClass}>Series</label>
-        <input id="series" type="text" value={series} onChange={(e) => setSeries(e.target.value)} className={inputClass} placeholder="Optional" />
+        <label htmlFor="series" className="form-label">Series</label>
+        <input id="series" type="text" value={series} onChange={(e) => setSeries(e.target.value)} className="form-input" placeholder="Optional" />
       </div>
 
       <div>
-        <label htmlFor="description" className={labelClass}>Description</label>
-        <textarea id="description" value={description} onChange={(e) => setDescription(e.target.value)} className={inputClass} rows={3} placeholder="Optional" />
+        <label htmlFor="description" className="form-label">Description</label>
+        <textarea id="description" value={description} onChange={(e) => setDescription(e.target.value)} className="form-input" rows={3} placeholder="Optional" />
       </div>
 
       <div>
-        <label htmlFor="image" className={labelClass}>Image URL</label>
-        <input id="image" type="text" value={image} onChange={(e) => setImage(e.target.value)} className={inputClass} />
+        <label htmlFor="image" className="form-label">Image URL</label>
+        <input id="image" type="text" value={image} onChange={(e) => setImage(e.target.value)} className="form-input" />
       </div>
 
       <div>
-        <label htmlFor="purchaseDate" className={labelClass}>Purchase Date</label>
-        <input id="purchaseDate" type="text" required value={purchaseDate} onChange={(e) => setPurchaseDate(e.target.value)} className={inputClass} placeholder="e.g. January 1, 2024" />
+        <label htmlFor="purchaseDate" className="form-label">Purchase Date</label>
+        <input id="purchaseDate" type="text" required value={purchaseDate} onChange={(e) => setPurchaseDate(e.target.value)} className="form-input" placeholder="e.g. January 1, 2024" />
       </div>
 
       {error && <p className="text-red-600 text-sm">{error}</p>}

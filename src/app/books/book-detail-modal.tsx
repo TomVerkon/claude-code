@@ -3,33 +3,8 @@
 import { useEffect, useRef } from "react";
 import Link from "next/link";
 import type { BookRow } from "@/lib/queries/books";
-
-function ownerLabel(owner: string): string {
-  if (owner === "tverkon") return "Tom";
-  if (owner === "dverkon") return "Denise";
-  return owner;
-}
-
-function typeLabel(bookType: string): string {
-  if (bookType === "KINDLE") return "Kindle";
-  if (bookType === "AUDIBLE") return "Audible";
-  if (bookType === "TECHNICAL") return "Technical";
-  return bookType;
-}
-
-function typeBadgeColor(bookType: string): string {
-  if (bookType === "KINDLE") return "bg-blue-100 text-blue-700";
-  if (bookType === "AUDIBLE") return "bg-orange-100 text-orange-700";
-  if (bookType === "TECHNICAL") return "bg-emerald-100 text-emerald-700";
-  return "bg-gray-100 text-gray-700";
-}
-
-function cardBgColor(bookType: string): string {
-  if (bookType === "KINDLE") return "AliceBlue";
-  if (bookType === "AUDIBLE") return "Beige";
-  if (bookType === "TECHNICAL") return "LightGray";
-  return "white";
-}
+import { cn } from "@/lib/cn";
+import { ownerLabel, typeBadgeClass, typeCardBgClass, typeLabel } from "@/lib/book-display";
 
 export function BookDetailModal({
   book,
@@ -62,8 +37,7 @@ export function BookDetailModal({
       onClose={onClose}
       className="rounded-xl shadow-xl border border-gray-200 p-0 max-w-lg w-full backdrop:bg-black/50"
     >
-      <div style={{ backgroundColor: cardBgColor(book.book_type) }} className="p-6 space-y-4">
-        {/* Header */}
+      <div className={cn("p-6 space-y-4", typeCardBgClass(book.book_type))}>
         <div className="flex justify-between items-start">
           <h2 className="text-xl font-bold text-gray-900 leading-tight pr-4">{book.title}</h2>
           <button
@@ -74,7 +48,6 @@ export function BookDetailModal({
           </button>
         </div>
 
-        {/* Cover image */}
         <div className="flex justify-center">
           <img
             src={book.image}
@@ -83,14 +56,13 @@ export function BookDetailModal({
           />
         </div>
 
-        {/* Details */}
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
           <dt className="font-medium text-gray-500">Authors</dt>
           <dd className="text-gray-900">{book.authors}</dd>
 
           <dt className="font-medium text-gray-500">Type</dt>
           <dd>
-            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${typeBadgeColor(book.book_type)}`}>
+            <span className={cn("text-xs font-medium px-2 py-0.5 rounded-full", typeBadgeClass(book.book_type))}>
               {typeLabel(book.book_type)}
             </span>
           </dd>
@@ -119,7 +91,6 @@ export function BookDetailModal({
           <dd className="text-gray-900">{new Date(book.created_at).toLocaleDateString()}</dd>
         </dl>
 
-        {/* Actions */}
         <div className="flex gap-3 pt-2">
           <Link
             href={`/books/${book.id}/edit`}
