@@ -57,6 +57,8 @@ export default function ImportPage() {
 
       const data: ParseResult = await res.json();
       setParseResult(data);
+      setRawText("");
+      setImagesJson("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {

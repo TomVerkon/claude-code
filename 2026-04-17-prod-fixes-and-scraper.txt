@@ -1,0 +1,123 @@
+2026-04-17 — Production fixes + Kindle scraper bookmarklet
+===========================================================
+
+SYMPTOM
+-------
+App worked locally but hung on Vercel after a successful login. POST to
+/api/auth/sign-in/email returned 200, then the /books?_rsc=... fetch never
+completed and useSession() was never called.
+
+ROOT CAUSES (two independent bugs)
+----------------------------------
+1) Stale pg.Pool connections on Vercel serverless.
+   src/lib/db.ts and src/lib/auth.ts each created a module-scope pg.Pool.
+   Vercel freezes/thaws serverless functions; TCP sockets in the pool go
+   stale between invocations, and the next query hangs on a dead socket.
+
+2) Proxy (Next.js 16's renamed middleware) couldn't find the session cookie
+   in production. src/proxy.ts was hard-coded to read the cookie
+   "better-auth.session_token". In production over HTTPS better-auth prefixes
+   the name with __Secure-, so the actual cookie is
+   "__Secure-better-auth.session_token". Proxy saw "no cookie" → redirected
+   every request to /login.
+
+FIXES
+-----
+A) Swapped pg driver for @neondatabase/serverless (WebSocket-based, no stale
+   TCP sockets).
+
+   src/lib/db.ts:
+     - import { Pool } from "pg"
+     + import { Pool } from "@neondatabase/serverless"
+     (dropped ssl option; serverless driver handles TLS over WebSocket)
+
+   src/lib/auth.ts: same swap for betterAuth({ database: new Pool(...) }).
+
+   npm uninstall pg @types/pg
+   npm install @neondatabase/serverless
+
+   Node 24 in use, so no `ws` polyfill required (only needed for Node < 22).
+
+B) Use better-auth's helper to read the session cookie regardless of prefix.
+
+   src/proxy.ts:
+     - const sessionCookie = request.cookies.get("better-auth.session_token")?.value;
+     + import { getSessionCookie } from "better-auth/cookies";
+     + const sessionCookie = getSessionCookie(request);
+
+   getSessionCookie() tries both "better-auth.session_token" and
+   "__Secure-better-auth.session_token".
+
+VERCEL ENV VARS TO VERIFY
+-------------------------
+  DATABASE_URL          (Neon pooled URL, hostname contains -pooler)
+  BETTER_AUTH_SECRET
+  BETTER_AUTH_URL       (e.g. https://libri-nostri.vercel.app)
+
+.env is gitignored, so Vercel reads ONLY the dashboard env vars.
+
+NOTES ON NEXT.JS 16
+-------------------
+- middleware.ts was renamed to proxy.ts (file location: src/proxy.ts).
+- Export is `proxy`, not `middleware`.
+- Config matcher syntax unchanged.
+
+
+=============================================================================
+KINDLE LIBRARY SCRAPER BOOKMARKLET
+=============================================================================
+
+Why: cutting "View Source" and pasting per page across many pages of Amazon
+"Manage Your Content" was labor-intensive. Bookmarklet walks pages with
+user pagination and accumulates into one clipboard blob that the existing
+parseKindleHtml() consumes.
+
+Works for both Kindle and Audible tabs on amazon.com/hz/mycd — both use the
+same outer container class. On the import page, pick "HTML" for Kindle or
+"Audible HTML" for Audible.
+
+FIRST VERSION (bloated — hits localStorage 5MB cap around ~150 books)
+---------------------------------------------------------------------
+Stored full container outerHTML per book (25-30KB each). localStorage.setItem
+throws QuotaExceededError silently; confirm() never fires, appears hung.
+
+SECOND VERSION — minimal HTML reconstruction (~500B per book) in localStorage
+-----------------------------------------------------------------------------
+Extracts only what parseKindleHtml needs and rebuilds a minimal container.
+50x reduction in storage footprint. But Amazon's mycd page already fills
+localStorage heavily (its own ~5MB cap), so even the minimal version hits
+QuotaExceededError on the first scrape for some users. The catch block
+alerted "Storage full — OK to copy now." but nothing was persisted, and the
+following confirm() still showed the in-memory count, which was confusing.
+
+FINAL VERSION — IndexedDB-backed (effectively unbounded)
+--------------------------------------------------------
+Same extraction logic, but accumulates into IndexedDB (DB='klScrape',
+store='books') instead of localStorage. IndexedDB quota is gigabytes, so
+Amazon's localStorage usage is no longer a constraint.
+
+Bookmarklet URL (paste as a bookmark URL — single line):
+
+javascript:(async function(){const DB='klScrape',ST='books';const op=()=>new Promise((s,j)=>{const r=indexedDB.open(DB,1);r.onupgradeneeded=()=>r.result.createObjectStore(ST);r.onsuccess=()=>s(r.result);r.onerror=()=>j(r.error);});const tx=(db,m)=>db.transaction(ST,m).objectStore(ST);const rq=r=>new Promise((s,j)=>{r.onsuccess=()=>s(r.result);r.onerror=()=>j(r.error);});const db=await op();const ex=new Set(await rq(tx(db,'readonly').getAllKeys()));const C=document.querySelectorAll('[class*="DigitalEntitySummary-module__container"]');const h=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');const q=s=>s.replace(/&/g,'&amp;').replace(/"/g,'&quot;');let a=0;for(const c of C){const tE=c.querySelector('[id^="content-title-"] [role="heading"]');if(!tE)continue;const id=tE.closest('[id^="content-title-"]').id;if(ex.has(id))continue;const ti=tE.textContent.replace(/\s+/g,' ').trim();const au=c.querySelector('[id^="content-author-"]')?.textContent.trim()||'';const im=c.querySelector('[id^="content-image-"] img')?.getAttribute('src')||'';const d=c.querySelector('[id^="content-acquired-date-"]')?.textContent.trim()||'';const rs=[];for(const r of c.querySelectorAll('.information_row')){const t=r.textContent.trim();if(/^(Acquired by|Shared with)\b/i.test(t))rs.push(t);}const html='<div class="DigitalEntitySummary-module__container"><div id="'+id+'"><div role="heading">'+h(ti)+'</div></div>'+(au?'<div id="content-author-x">'+h(au)+'</div>':'')+(im?'<div id="content-image-x"><img src="'+q(im)+'"/></div>':'')+(d?'<div id="content-acquired-date-x">'+h(d)+'</div>':'')+rs.map(t=>'<div class="information_row">'+h(t)+'</div>').join('')+'</div>';await rq(tx(db,'readwrite').put(html,id));a++;}const all=await rq(tx(db,'readonly').getAll());const t=all.length;if(confirm('Page: +'+a+'. Total: '+t+'\n\nOK=copy+reset. Cancel=keep paginating.')){const ht='<html><body>'+all.join('\n')+'</body></html>';await navigator.clipboard.writeText(ht);await rq(tx(db,'readwrite').clear());alert('Copied '+t+' books.');}})();
+
+Readable source: see K-Scrape.js in the repo root.
+
+USAGE
+-----
+1. Create a bookmark with the javascript:... URL (or replace the URL on the
+   existing bookmark if upgrading from the localStorage version).
+2. Open amazon.com/hz/mycd → Books or Audiobooks tab.
+3. Click bookmark on each page → Cancel (keep going) or OK on last page.
+4. Paste clipboard into /purchases/import HTML field (pick Kindle or Audible).
+5. Dedup is by content-title-* id; re-clicking same page doesn't double-count.
+6. If you ever need to reset mid-run, in DevTools console:
+     indexedDB.deleteDatabase('klScrape')
+   (Old leftover state from the previous version can be cleared with
+     localStorage.removeItem('klScrape2'))
+
+FILES CHANGED THIS SESSION
+--------------------------
+  src/lib/db.ts       — pg → @neondatabase/serverless
+  src/lib/auth.ts     — pg → @neondatabase/serverless
+  src/proxy.ts        — use getSessionCookie() helper
+  package.json        — removed pg, @types/pg; added @neondatabase/serverless

@@ -7,14 +7,15 @@
 Monolithic Next.js App Router application:
 
 - **UI:** React Server Components + Client Components
-- **Business logic:** Server Actions (planned), Route Handlers (implemented)
+- **Business logic:** Server Actions (implemented for book CRUD), Route Handlers (implemented)
 - **Bulk parsing endpoint:** Route Handler (`app/api/import/route.ts`)
-- **Database access:** Direct `pg` client
+- **Database access:** `@neondatabase/serverless` (WebSocket-based Pool — serverless-safe; replaces `pg` driver which suffers from stale TCP connections on Vercel Fluid Compute)
 - **Auth:** better-auth (session-based) — configured and wired up
 - **Validation:** Zod
-- **Database:** PostgreSQL
+- **Database:** Neon Postgres
 - **Migration strategy:** Versioned raw SQL files
 - **Styling:** Tailwind CSS v4
+- **Hosting:** Vercel
 
 This is intentionally simple and production-ready without unnecessary abstraction.
 
@@ -26,14 +27,15 @@ This is intentionally simple and production-ready without unnecessary abstractio
 Browser
   ↓
 Next.js App Router
+  ├── Proxy (src/proxy.ts) — session-cookie route protection
   ├── Server Components (data fetch)
   ├── Client Components (forms, import UI)
-  ├── Server Actions (CRUD — planned)
-  └── Route Handler (/api/import)
+  ├── Server Actions (CRUD)
+  └── Route Handlers (/api/import, /api/auth/[...all])
   ↓
-Database Layer (pg)
+Database Layer (@neondatabase/serverless Pool)
   ↓
-PostgreSQL
+Neon Postgres
 ```
 
 ---
@@ -174,28 +176,34 @@ Using better-auth (installed and configured):
 - Session-based auth
 - Login page at `/login`
 - Auth API route at `/api/auth/[...all]`
-- Route protection via `src/proxy.ts` middleware (checks `better-auth.session_token` cookie)
+- Route protection via `src/proxy.ts` (Next.js 16 replaced middleware with proxy — export is `proxy`, not `middleware`). Uses better-auth's `getSessionCookie()` helper from `better-auth/cookies`, which reads both `better-auth.session_token` (dev/HTTP) and `__Secure-better-auth.session_token` (prod/HTTPS). Hard-coding the un-prefixed name breaks production.
 
 **better-auth config (`lib/auth.ts`) — implemented:**
 
 ```ts
 import { betterAuth } from "better-auth";
-import { pool } from "./db";
+import { Pool } from "@neondatabase/serverless";
 
 export const auth = betterAuth({
-  database: pool,
-  user: {
-    additionalFields: {
-      role: {
-        type: ["user", "admin"],
-        required: false,
-        defaultValue: "user",
-        input: false,
+  database: new Pool({
+    connectionString: process.env.DATABASE_URL,
+  }),
+  emailAndPassword: { enabled: true },
+  databaseHooks: {
+    user: {
+      create: {
+        before: async (user) => {
+          const allowed = [process.env.FIRST_EMAIL, process.env.SECOND_EMAIL];
+          if (!allowed.includes(user.email)) return false;
+          return { data: user };
+        },
       },
     },
   },
-  emailAndPassword: {
-    enabled: true,
+  user: {
+    additionalFields: {
+      role: { type: "string", defaultValue: "user" },
+    },
   },
 });
 ```
@@ -292,10 +300,10 @@ src/
 
 ### 6.1 `db.ts`
 
-Singleton `pg` pool:
+Singleton Neon serverless pool (WebSocket transport):
 
 ```ts
-import { Pool } from 'pg';
+import { Pool } from '@neondatabase/serverless';
 
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -306,6 +314,8 @@ export const pool = new Pool({
 - All queries parameterized.
 - All queries live in `lib/queries/*`.
 - No inline SQL in components.
+- The same `Pool` is passed to better-auth in `lib/auth.ts`. API-compatible with `pg.Pool` but uses WebSockets instead of TCP, so Vercel's freeze/thaw cycle does not leave stale sockets.
+- Node 24 satisfies the built-in `WebSocket` global; no `ws` polyfill needed (`ws` is only required for Node < 22).
 
 ### 6.2 `queries/books.ts` (implemented)
 
@@ -624,18 +634,23 @@ Apply manually:
 
 ## 14. Environment Configuration
 
-**`.env.local`**
+**`.env.local` (dev)**
 
 ```
-DATABASE_URL=
-BETTER_AUTH_SECRET=
-BETTER_AUTH_URL=
+DATABASE_URL=postgres://...         # Neon pooled URL (hostname contains -pooler)
+BETTER_AUTH_SECRET=                 # 32+ byte random hex
+BETTER_AUTH_URL=http://localhost:3000
+FIRST_EMAIL=tverkon@gmail.com
+SECOND_EMAIL=dverkon@gmail.com
+TVERKON_PASSWORD=                   # used by seed-users script only
+DVERKON_PASSWORD=
 ```
 
-**Vercel:**
+**Vercel (prod):**
 
-- Set same env vars in dashboard
-- Use production Postgres URL
+- Set the same env vars in the Vercel dashboard. `.env*` files are gitignored and NOT deployed — dashboard values are the only source.
+- `BETTER_AUTH_URL` must be the deployed HTTPS origin (e.g. `https://libri-nostri.vercel.app`); this determines whether better-auth sets the `__Secure-` cookie prefix.
+- `DATABASE_URL` should be the Neon **pooled** connection string.
 
 ---
 
@@ -714,6 +729,9 @@ Designed to support:
 - [x] Edit book page (`/books/[id]/edit`) with shared form component
 - [x] Delete with confirmation (from modal and edit page)
 - [x] UserNav component (username + logout) on all pages
+- [x] Vercel deployment — swapped `pg` driver for `@neondatabase/serverless` (fixes stale-pool hang after login)
+- [x] Production auth — `src/proxy.ts` uses `getSessionCookie()` helper (fixes `__Secure-` cookie prefix mismatch in prod)
+- [x] Kindle/Audible scraper bookmarklet — walks paginated Amazon library pages, accumulates minimal container HTML in `localStorage`, outputs single clipboard blob compatible with existing parsers (documented in `2026-04-17-prod-fixes-and-scraper.txt`)
 
 ### Not Yet Started
 

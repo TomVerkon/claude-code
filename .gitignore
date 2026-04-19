@@ -36,6 +36,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# scraper output (contains personal Amazon library data)
+scrape.html
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
