@@ -121,14 +121,10 @@ export function BookForm({ book }: { book?: BookRow }) {
         <input id="purchaseDate" type="text" required value={purchaseDate} onChange={(e) => setPurchaseDate(e.target.value)} className="form-input" placeholder="e.g. January 1, 2024" />
       </div>
 
-      {error && <p className="text-red-600 text-sm">{error}</p>}
+      {error && <p className="text-red-600 dark:text-red-400 text-sm">{error}</p>}
 
       <div className="flex gap-3 pt-2">
-        <button
-          type="submit"
-          disabled={loading}
-          className="bg-blue-600 text-white rounded px-4 py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-        >
+        <button type="submit" disabled={loading} className="btn-primary">
           {loading ? "Saving..." : isEdit ? "Update Book" : "Create Book"}
         </button>
 
@@ -137,17 +133,13 @@ export function BookForm({ book }: { book?: BookRow }) {
             type="button"
             onClick={handleDelete}
             disabled={loading}
-            className="bg-red-600 text-white rounded px-4 py-2 text-sm font-medium hover:bg-red-700 disabled:opacity-50"
+            className="inline-flex items-center justify-center bg-red-600 text-white hover:bg-red-700 rounded-md px-4 py-2 text-sm font-medium disabled:opacity-50 transition-colors"
           >
             Delete
           </button>
         )}
 
-        <button
-          type="button"
-          onClick={() => router.push("/books")}
-          className="bg-gray-200 text-gray-700 rounded px-4 py-2 text-sm font-medium hover:bg-gray-300"
-        >
+        <button type="button" onClick={() => router.push("/books")} className="btn-secondary">
           Cancel
         </button>
       </div>

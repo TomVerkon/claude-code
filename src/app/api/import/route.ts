@@ -25,6 +25,7 @@ const importSchema = z.object({
       sortableTitle: z.string(),
       searchableContent: z.string(),
       series: z.string().nullable(),
+      asin: z.string().nullable(),
     })
   ),
 });

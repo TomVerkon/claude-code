@@ -11,6 +11,7 @@ export type ParsedBook = {
   sortableTitle: string;
   searchableContent: string;
   series: string | null;
+  asin: string | null;
 };
 
 const NOISE_LINES = new Set([
@@ -130,27 +131,26 @@ function makeSortableTitle(title: string, series: string | null): string {
 }
 
 /**
- * Remove description (subtitle after colon) from a title, keeping series paren.
- * "Beasts in the Garden: A sci-fi novel (Series Book 1)" → "Beasts in the Garden (Series Book 1)"
+ * Produce the display title: drop the post-colon description and any trailing
+ * series parenthetical. Description and series are already captured in their
+ * own fields, so repeating them in title is redundant.
+ * "Beasts in the Garden: A sci-fi novel (Series Book 1)" → "Beasts in the Garden"
  * "Already Home: A Romance About Family" → "Already Home"
- * "Story of My Life (Story Lake Book 1)" → "Story of My Life (Story Lake Book 1)" (unchanged)
+ * "Story of My Life (Story Lake Book 1)" → "Story of My Life"
  */
 function cleanTitle(rawTitle: string, series: string | null): string {
-  const colonIdx = rawTitle.indexOf(":");
-  if (colonIdx === -1) return rawTitle;
+  let cleaned = rawTitle;
 
-  const titlePart = rawTitle.substring(0, colonIdx).trim();
-
-  // Find the series paren in the original title to preserve it
   if (series) {
-    // Match the last paren group (series) from the original
-    const parenMatch = rawTitle.match(/(\([^()]*\))\s*$/);
-    if (parenMatch) {
-      return `${titlePart} ${parenMatch[1]}`;
-    }
+    cleaned = cleaned.replace(/\s*\([^()]*\)\s*$/, "");
   }
 
-  return titlePart;
+  const colonIdx = cleaned.indexOf(":");
+  if (colonIdx !== -1) {
+    cleaned = cleaned.substring(0, colonIdx);
+  }
+
+  return cleaned.trim();
 }
 
 /**
@@ -287,6 +287,7 @@ export function parseKindleText(rawText: string, images: string[] = []): ParsedB
       sortableTitle,
       searchableContent,
       series,
+      asin: null,
     });
   }
 
@@ -306,10 +307,14 @@ export function parseKindleHtml(html: string): ParsedBook[] {
 
   for (const container of containers) {
     // Title: div[id^="content-title-"] > div[role="heading"]
-    const titleEl = container.querySelector('[id^="content-title-"] [role="heading"]');
+    const titleWrapper = container.querySelector('[id^="content-title-"]');
+    const titleEl = titleWrapper?.querySelector('[role="heading"]');
     if (!titleEl) continue;
     const rawTitle = titleEl.text.replace(/\s+/g, " ").trim();
     if (!rawTitle) continue;
+
+    // ASIN is the suffix of the title wrapper's id: "content-title-{ASIN}"
+    const asin = titleWrapper?.getAttribute("id")?.replace(/^content-title-/, "") ?? null;
 
     // Authors: div[id^="content-author-"]
     const authorEl = container.querySelector('[id^="content-author-"]');
@@ -357,6 +362,7 @@ export function parseKindleHtml(html: string): ParsedBook[] {
       sortableTitle,
       searchableContent,
       series,
+      asin: asin || null,
     });
   }
 

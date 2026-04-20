@@ -128,6 +128,7 @@ CREATE TABLE books (
     owner              owner_enum NOT NULL,
     readers            TEXT NOT NULL DEFAULT 'tverkon|0|1,dverkon|0|1',
     series             TEXT,
+    asin               TEXT,
     authors            TEXT NOT NULL,
     sortable_title     TEXT NOT NULL,
     searchable_content TEXT NOT NULL,
@@ -142,6 +143,7 @@ CREATE TABLE books (
 > - `id` is `SERIAL` (auto-increment integer), not `UUID`
 > - `book_type` and `owner` use PostgreSQL enums instead of plain `TEXT`
 > - Duplicate detection: composite unique constraint on `book_type + title + authors + owner + purchase_date` (5 fields, includes `book_type`)
+> - `asin` is nullable, no unique constraint — shared books legitimately share an ASIN across both owner rows; manually-entered books have no ASIN. Captured by the HTML parsers; plain-text Kindle imports leave it null. Keyed by the enrichment flow (`/purchases/enrich`) to merge series/description from audible.com.
 
 #### `tags` *(not yet implemented)*
 
@@ -251,8 +253,11 @@ src/
  │   │       └── edit/
  │   │           └── page.tsx    (edit book page — Server Component)
  │   ├── purchases/
- │   │   └── import/
- │   │       └── page.tsx        (import UI with format toggle — Client Component)
+ │   │   ├── import/
+ │   │   │   └── page.tsx        (import UI with format toggle — Client Component)
+ │   │   └── enrich/
+ │   │       ├── page.tsx        (Audible enrichment UI — Client Component)
+ │   │       └── actions.ts      (preview + apply Server Actions)
  │   └── api/
  │       ├── auth/
  │       │   └── [...all]/
@@ -269,18 +274,20 @@ src/
  │   ├── schemas/
  │   │   └── book.ts             (Zod schema for book create/update)
  │   ├── queries/
- │   │   └── books.ts            (getBooks, getBookById, createBook, updateBook, deleteBook, checkDuplicates, insertBooks)
+ │   │   └── books.ts            (getBooks, getBookById, createBook, updateBook, deleteBook, checkDuplicates, insertBooks, previewAudibleEnrichment, applyAudibleEnrichment)
  │   └── parsing/
- │       ├── kindle-parser.ts    (parseKindleText, parseKindleHtml, parseImageJson)
- │       ├── audible-parser.ts   (parseAudibleHtml)
- │       └── __tests__/          (parser unit tests)
+ │       ├── kindle-parser.ts            (parseKindleText, parseKindleHtml, parseImageJson)
+ │       ├── audible-parser.ts           (parseAudibleHtml)
+ │       ├── audible-enrichment-parser.ts (parseAudibleEnrichmentHtml — A-Scrape output)
+ │       └── __tests__/                  (parser unit tests)
  │
  ├── scripts/
  │   └── seed-users.ts           (create tverkon + dverkon users)
  │
  └── migrations/
      ├── 000_create_db.sql
-     └── 001_create_tables.sql
+     ├── 001_create_tables.sql
+     └── 003_truncate_and_add_asin.sql   (truncate books + ADD COLUMN asin)
 ```
 
 ### 5.2 Planned (not yet created)
@@ -326,6 +333,8 @@ export const pool = new Pool({
 - **`deleteBook(id)`** — delete a book by ID, returns `boolean`
 - **`checkDuplicates(books)`** — checks parsed books against DB using composite key (`book_type + title + authors + owner + purchase_date`), returns `{ newBooks, duplicates }`
 - **`insertBooks(books)`** — bulk inserts in a single transaction with `ON CONFLICT DO NOTHING`, returns inserted count
+- **`previewAudibleEnrichment(records)`** — given `{asin, series, description}[]`, looks up existing `AUDIBLE` rows by ASIN and returns a preview per record listing matched rows (`id`, `title`, `owner`, `hasSeries`, `hasDescription`) alongside the proposed new values. Shared books surface both owners' rows under a single ASIN
+- **`applyAudibleEnrichment(records)`** — transactional per-record `UPDATE` filtered by `book_type = 'AUDIBLE' AND asin = $N` (owner-agnostic so shared rows update together). Dynamically builds the SET clause so `null` fields are preserved, non-null fields overwrite (blurb-wins). Returns total rows updated
 
 ---
 
@@ -427,6 +436,7 @@ type ParsedBook = {
   sortableTitle: string;
   searchableContent: string;
   series: string | null;
+  asin: string | null;
 };
 ```
 
@@ -446,6 +456,60 @@ type ParsedBook = {
 - Owner and date extraction
 - Image URL upgrading to higher resolution
 - Sets `bookType` to `AUDIBLE`
+
+### 8.7 ASIN Capture
+
+Both HTML parsers extract ASIN from Amazon's container ids:
+
+- `parseKindleHtml` — reads the `content-title-{ASIN}` wrapper id
+- `parseAudibleHtml` — reads the `content-image-{ASIN}` wrapper id
+
+Stored in `books.asin` (nullable `TEXT`, no unique constraint). Plain-text Kindle imports and manually-created books leave it `null`. Shared books legitimately duplicate the same ASIN across both owner rows.
+
+---
+
+## 8a. Enrichment Flow (Audible series/description)
+
+Amazon's Audible tab on Manage Your Content does not expose series or description. The enrichment flow closes that gap by scraping audible.com directly.
+
+### 8a.1 UX Flow
+
+1. User visits their audible.com library and runs the **A-Scrape** bookmarklet, paging through results. Entries accumulate in IndexedDB (`aScrape/books`) keyed by ASIN
+2. On the last page, A-Scrape copies the accumulated HTML blob to the clipboard
+3. User navigates to `/purchases/enrich`, pastes the blob, clicks **Preview**
+4. Server parses the blob via `parseAudibleEnrichmentHtml`, calls `previewAudibleEnrichment`, and returns matched/unmatched counts plus a per-ASIN row listing
+5. User clicks **Apply** — `applyAudibleEnrichment` runs per-record `UPDATE`s in a single transaction, reports rows affected
+
+### 8a.2 A-Scrape Output Shape
+
+Each library row emits:
+
+```html
+<div class="kscrape-audible-enrich" data-asin="B0...">
+  <div class="kscrape-title">...</div>
+  <div class="kscrape-authors">...</div>
+  <div class="kscrape-series">Series Name, Book 3</div>  <!-- optional -->
+  <div class="kscrape-description">...</div>             <!-- optional -->
+</div>
+```
+
+`parseAudibleEnrichmentHtml` skips entries missing `data-asin` or title; optional fields are emitted as `null` when absent.
+
+### 8a.3 Matching and Semantics
+
+- **Key:** ASIN only. Matching is **owner-agnostic** so shared books update both rows in one `UPDATE`
+- **Type scope:** `WHERE book_type = 'AUDIBLE'` to avoid cross-type collisions
+- **Blurb-wins:** a non-null enrichment field overwrites the existing column; a null field leaves the existing column untouched
+- **Unmatched:** ASINs in the blob with no corresponding Audible row are surfaced in an amber table on the preview — typically a book that was never imported
+
+### 8a.4 Server Actions
+
+`src/app/purchases/enrich/actions.ts`:
+
+- `previewEnrichmentAction(rawHtml)` → parses + previews
+- `applyEnrichmentAction(records)` → applies and revalidates `/books`
+
+Both return `{ success: true, ... }` or `{ success: false, error: string }`.
 
 ---
 
@@ -621,8 +685,9 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 ```
 src/migrations/
-  000_create_db.sql          (CREATE DATABASE family_books)
-  001_create_tables.sql      (enums + books table + auth tables)
+  000_create_db.sql                    (CREATE DATABASE family_books)
+  001_create_tables.sql                (enums + books table + auth tables)
+  003_truncate_and_add_asin.sql        (TRUNCATE books RESTART IDENTITY; ADD COLUMN asin TEXT)
 ```
 
 Apply manually:
@@ -667,8 +732,9 @@ DVERKON_PASSWORD=
 ## 16. Testing Strategy
 
 - **Parser unit tests (implemented):** `src/lib/parsing/__tests__/`
-  - `kindle-parser.test.ts` — tests for `parseKindleText`, `parseImageJson`, `parseKindleHtml` (series extraction, owner resolution, title cleaning, noise line handling, multiple books)
-  - `audible-parser.test.ts` — tests for `parseAudibleHtml`
+  - `kindle-parser.test.ts` — tests for `parseKindleText`, `parseImageJson`, `parseKindleHtml` (series extraction, owner resolution, title cleaning, noise line handling, multiple books, ASIN extraction from `content-title-` id)
+  - `audible-parser.test.ts` — tests for `parseAudibleHtml` (including ASIN extraction from `content-image-` id)
+  - `audible-enrichment-parser.test.ts` — tests for `parseAudibleEnrichmentHtml` (full entry, missing optional fields, multiple entries, skip missing asin/title, empty input)
 - Duplicate detection tests (not yet)
 - SQL integration tests (optional)
 - Fixture TXT files for Kindle/Audible (`kindle-01.txt` exists as sample data)
@@ -732,6 +798,13 @@ Designed to support:
 - [x] Vercel deployment — swapped `pg` driver for `@neondatabase/serverless` (fixes stale-pool hang after login)
 - [x] Production auth — `src/proxy.ts` uses `getSessionCookie()` helper (fixes `__Secure-` cookie prefix mismatch in prod)
 - [x] Kindle/Audible scraper bookmarklet — walks paginated Amazon library pages, accumulates minimal container HTML in `localStorage`, outputs single clipboard blob compatible with existing parsers (documented in `2026-04-17-prod-fixes-and-scraper.txt`)
+- [x] ASIN column on `books` (nullable, no constraint) + migration `003_truncate_and_add_asin.sql`
+- [x] K-Scrape rewrite — hybrid stub output that satisfies both Kindle and Audible HTML parsers from the same Amazon page, dedup keyed by ASIN (IndexedDB `klScrape/books`)
+- [x] A-Scrape bookmarklet — scrapes audible.com library (title, authors, series, description) into IndexedDB `aScrape/books`, outputs enrichment blob
+- [x] `parseAudibleEnrichmentHtml` + tests
+- [x] `previewAudibleEnrichment` / `applyAudibleEnrichment` queries (blurb-wins, owner-agnostic, transactional)
+- [x] `/purchases/enrich` page + Server Actions (preview/apply)
+- [x] "Enrich" nav link in `AppHeader`
 
 ### Not Yet Started
 

@@ -10,6 +10,7 @@ export type BookRow = {
   owner: string;
   readers: string;
   series: string | null;
+  asin: string | null;
   authors: string;
   sortable_title: string;
   searchable_content: string;
@@ -35,7 +36,7 @@ export async function getBooks(page = 1, pageSize = 24): Promise<BooksPage> {
   const [countResult, booksResult] = await Promise.all([
     pool.query("SELECT COUNT(*) FROM books"),
     pool.query(
-      `SELECT id, book_type, title, description, image, owner, readers, series, authors, sortable_title, searchable_content, purchase_date, created_at, updated_at
+      `SELECT id, book_type, title, description, image, owner, readers, series, asin, authors, sortable_title, searchable_content, purchase_date, created_at, updated_at
        FROM books
        ORDER BY purchase_date DESC, sortable_title ASC
        LIMIT $1 OFFSET $2`,
@@ -128,7 +129,7 @@ export type BookInput = {
  */
 export async function getBookById(id: number): Promise<BookRow | null> {
   const result = await pool.query(
-    `SELECT id, book_type, title, description, image, owner, readers, series, authors,
+    `SELECT id, book_type, title, description, image, owner, readers, series, asin, authors,
             sortable_title, searchable_content, purchase_date, created_at, updated_at
      FROM books WHERE id = $1`,
     [id]
@@ -173,6 +174,109 @@ export async function deleteBook(id: number): Promise<boolean> {
   return (result.rowCount ?? 0) > 0;
 }
 
+export type EnrichmentPreview = {
+  asin: string;
+  matched: { id: number; title: string; owner: string; hasSeries: boolean; hasDescription: boolean }[];
+  newSeries: string | null;
+  newDescription: string | null;
+};
+
+/**
+ * For a list of {asin, series, description} records, return which existing
+ * books would be updated. Shared ASINs match both owners' rows — the UPDATE
+ * is owner-agnostic so both rows receive the same enrichment.
+ */
+export async function previewAudibleEnrichment(
+  records: { asin: string; series: string | null; description: string | null }[]
+): Promise<EnrichmentPreview[]> {
+  if (records.length === 0) return [];
+
+  const asins = records.map((r) => r.asin);
+  const result = await pool.query(
+    `SELECT id, asin, title, owner, series, description
+     FROM books
+     WHERE book_type = 'AUDIBLE' AND asin = ANY($1)`,
+    [asins]
+  );
+
+  const byAsin = new Map<string, { id: number; title: string; owner: string; series: string | null; description: string | null }[]>();
+  for (const row of result.rows) {
+    const list = byAsin.get(row.asin) ?? [];
+    list.push(row);
+    byAsin.set(row.asin, list);
+  }
+
+  return records.map((r) => {
+    const rows = byAsin.get(r.asin) ?? [];
+    return {
+      asin: r.asin,
+      matched: rows.map((row) => ({
+        id: row.id,
+        title: row.title,
+        owner: row.owner,
+        hasSeries: row.series !== null && row.series !== "",
+        hasDescription: row.description !== null && row.description !== "",
+      })),
+      newSeries: r.series,
+      newDescription: r.description,
+    };
+  });
+}
+
+/**
+ * Apply enrichment: update series and description by ASIN (Audible only).
+ * Blurb wins — always overwrites existing series/description when the
+ * enrichment record has a non-null value. If the enrichment value is null,
+ * the existing column is left untouched.
+ *
+ * Returns the count of rows actually updated.
+ */
+export async function applyAudibleEnrichment(
+  records: { asin: string; series: string | null; description: string | null }[]
+): Promise<number> {
+  if (records.length === 0) return 0;
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    let totalUpdated = 0;
+
+    for (const r of records) {
+      if (r.series === null && r.description === null) continue;
+
+      const sets: string[] = [];
+      const values: (string | null)[] = [];
+      let idx = 1;
+
+      if (r.series !== null) {
+        sets.push(`series = $${idx++}`);
+        values.push(r.series);
+      }
+      if (r.description !== null) {
+        sets.push(`description = $${idx++}`);
+        values.push(r.description);
+      }
+      sets.push(`updated_at = NOW()`);
+      values.push(r.asin);
+
+      const result = await client.query(
+        `UPDATE books SET ${sets.join(", ")}
+         WHERE book_type = 'AUDIBLE' AND asin = $${idx}`,
+        values
+      );
+      totalUpdated += result.rowCount ?? 0;
+    }
+
+    await client.query("COMMIT");
+    return totalUpdated;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 /**
  * Bulk insert new books in a single transaction.
  */
@@ -189,7 +293,7 @@ export async function insertBooks(books: ParsedBook[]): Promise<number> {
 
     for (const book of books) {
       valuePlaceholders.push(
-        `($${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3}, $${paramIndex + 4}, $${paramIndex + 5}, $${paramIndex + 6}, $${paramIndex + 7}, $${paramIndex + 8}, $${paramIndex + 9})`
+        `($${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3}, $${paramIndex + 4}, $${paramIndex + 5}, $${paramIndex + 6}, $${paramIndex + 7}, $${paramIndex + 8}, $${paramIndex + 9}, $${paramIndex + 10})`
       );
       values.push(
         book.bookType,
@@ -201,13 +305,14 @@ export async function insertBooks(books: ParsedBook[]): Promise<number> {
         book.sortableTitle,
         book.searchableContent,
         book.purchaseDate,
-        book.series
+        book.series,
+        book.asin
       );
-      paramIndex += 10;
+      paramIndex += 11;
     }
 
     const query = `
-      INSERT INTO books (book_type, title, description, image, owner, authors, sortable_title, searchable_content, purchase_date, series)
+      INSERT INTO books (book_type, title, description, image, owner, authors, sortable_title, searchable_content, purchase_date, series, asin)
       VALUES ${valuePlaceholders.join(", ")}
       ON CONFLICT ON CONSTRAINT uq_books_duplicate DO NOTHING
     `;

@@ -1,0 +1,407 @@
+2026-04-20 — Dark mode, mobile header, detail route, palette system, parser cleanup
+====================================================================================
+
+GOALS (set up front, sequenced to avoid re-painting)
+----------------------------------------------------
+1. Manual light/dark toggle
+2. Mobile-friendly header
+3. Replace book detail modal with a real /books/[id] route
+4. Color sweep for dark-mode coverage
+5. (Added late) switch book-type colors to Tailwind palettes, swap-friendly
+6. (Added late) parser fix: title should not repeat series/description
+
+STEP 1 — Token foundation + theme plumbing
+------------------------------------------
+- Installed next-themes.
+- Rewrote src/app/globals.css with:
+    @custom-variant dark (&:where(.dark, .dark *));
+  light + dark values for semantic tokens (background, foreground, card, muted,
+  muted-foreground, border, accent) plus card-kindle/audible/technical slots.
+- Registered semantic tokens in @theme inline so bg-background, bg-card,
+  text-muted-foreground, bg-card-kindle, etc. all become real utilities.
+- Created src/app/theme-provider.tsx wrapping NextThemesProvider with
+  attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange.
+- Wrapped layout.tsx children in ThemeProvider, added suppressHydrationWarning
+  on <html>.
+
+STEP 2 — Header redesign + theme toggle
+---------------------------------------
+- src/app/theme-toggle.tsx: next-themes toggle button. Returns a sized
+  placeholder until mounted to avoid hydration flicker (standard next-themes
+  pattern).
+- src/app/app-header.tsx: sticky header, brand links to /books, active-page
+  nav highlighting via usePathname(). Desktop shows inline nav + theme toggle
+  + user info. Mobile collapses to theme toggle + hamburger that opens a
+  dropdown menu with the same links.
+- src/app/user-nav.tsx: tokenized (text-muted-foreground / text-accent).
+- Swept every page (books, books/new, books/[id]/edit, purchases/import)
+  to use <AppHeader /> and tokenized backgrounds. Page-specific <h1>s moved
+  into the body.
+
+STEP 3 — /books/[id] detail route (replace modal)
+-------------------------------------------------
+- src/app/books/[id]/page.tsx: server component. Single column on mobile,
+  image-left / info-right on md+. Back link to /books. All tokens, no
+  hardcoded grays.
+- src/app/books/[id]/delete-button.tsx: small client component isolating the
+  window.confirm + deleteBookAction + router.push("/books") flow.
+- src/app/books/book-grid.tsx: cards are now <Link href="/books/{id}">,
+  fully server-rendered — removed the useState + useRouter + BookDetailModal
+  + onDoubleClick. Tokenized card text so dark mode reads correctly.
+- Deleted src/app/books/book-detail-modal.tsx.
+- User confirmed the trade-off: Library → tap card → detail → Edit (one extra
+  click vs. the old hover-only Edit link, but mobile-friendly and URL-
+  shareable).
+
+STEP 3b — Button iteration on the detail page
+---------------------------------------------
+- First pass: Edit as bg-accent button, Delete as bg-red-600 button, both
+  flex-1 in a row.
+- User asked for subtler buttons, primary on the right, secondary as a link.
+- Updated: flex-col-reverse sm:flex-row sm:justify-end so DOM order Delete→Edit
+  produces primary-on-right (desktop) and primary-on-top (mobile). Edit uses
+  a neutral bg-foreground text-background treatment; Delete becomes a muted
+  text link that turns red on hover.
+
+STEP 3c — Book-type palette system (Teal / Indigo / Amber)
+----------------------------------------------------------
+- User wanted palette-based colors with easy iteration. Rejected SCSS: Tailwind
+  v4's CSS-first model already gives palette iteration ergonomics, and SCSS
+  variables are compile-time so they can't participate in runtime theming.
+- Leveraged the fact that Tailwind v4 ships every default palette (teal,
+  cyan, indigo, amber, etc.) as var(--color-{name}-{step}) — no need to
+  hand-transcribe oklch values.
+- globals.css semantic tokens point at palette scales:
+    :root { --card-kindle: var(--color-teal-50); ... }
+    .dark { --card-kindle: var(--color-teal-700); ... }
+    (user later tweaked to 100 light / 700 dark for more saturated cards)
+- Updated src/lib/book-display.ts TYPE_BADGE to match palette:
+    bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-200
+- Palette swap = change palette name in 4 places (2× globals.css + 1 badge
+  line in book-display.ts).
+- User switched audible from cyan → indigo mid-session.
+
+STEP 3d — Primary UI palette + button utilities
+-----------------------------------------------
+- Introduced --accent / --accent-hover / --accent-fg backed by indigo scale
+  (indigo-600/700/white light; indigo-400/300/near-black dark).
+- Exposed as utilities via @theme inline (bg-accent, text-accent,
+  bg-accent-hover, text-accent-fg).
+- Added @utility btn-primary and btn-secondary in globals.css to consolidate
+  button styling — future palette swaps touch exactly one place.
+- Updated every primary button across the app:
+    • Book detail Edit        → btn-primary
+    • Book form Save / Cancel → btn-primary / btn-secondary
+    • Login Sign-in           → btn-primary
+    • Import Parse / Confirm  → btn-primary
+    • Pagination current page → bg-accent text-accent-fg
+- Kept state colors (Delete red-600, error boxes red-50/red-700, success box
+  green-50/green-700) intentionally — they're semantic, not brand.
+- Note: audible palette is indigo, primary accent palette is also indigo, so
+  there's deliberate tone overlap. User accepted; can diverge later.
+
+STEP 4 — Color sweep
+--------------------
+Swept all remaining hardcoded neutrals:
+- login/page.tsx: bg-gray-50 → bg-muted; bg-white card → bg-card border-border;
+  text-gray-900 h1 → text-foreground.
+- purchases/import/page.tsx: textareas (bg-background text-foreground
+  border-border, focus:ring-accent), table headers bg-muted, secondary cells
+  text-muted-foreground, error box gets dark:bg-red-950/40 etc., success box
+  gets dark:bg-green-950/40 etc., duplicates table keeps amber but with
+  dark variants (amber-950/40, amber-900).
+- book-form.tsx / login.tsx: form error text gets dark:text-red-400.
+- book-display.ts: fallback badge + card use tokens.
+Grep for bg-gray-/bg-white/text-gray-/border-gray- returned zero matches.
+
+STEP 5 — CSS tweaks by user
+---------------------------
+- Bumped card saturation: light 50 → 100, dark 950 → 700 (much more visible
+  tint).
+- I flagged that gray-400 muted-foreground on saturated -700 backgrounds
+  might be muddy; user said "bump lighter" → changed .dark muted-foreground
+  from #9ca3af (gray-400) to #d1d5db (gray-300).
+
+STEP 6 — Parser fix: title should not repeat series/description
+---------------------------------------------------------------
+User noticed series shows both in title and in its own field on Kindle cards.
+Old parser's cleanTitle deliberately kept the trailing "(Series Book N)" paren
+after stripping the post-colon description. Now that series is a first-class
+display field, that's redundant.
+
+Fix applied to both parsers identically:
+    function cleanTitle(rawTitle, series) {
+      let cleaned = rawTitle;
+      if (series) cleaned = cleaned.replace(/\s*\([^()]*\)\s*$/, "");
+      const colonIdx = cleaned.indexOf(":");
+      if (colonIdx !== -1) cleaned = cleaned.substring(0, colonIdx);
+      return cleaned.trim();
+    }
+
+Result:
+    "Beasts in the Garden: A sci-fi novel (Convergence Book 1)"
+      title       → "Beasts in the Garden"
+      description → "A sci-fi novel"
+      series      → "Convergence Book 1"
+
+sortableTitle is unchanged (keeps the series paren for in-series sort grouping).
+
+Updated test expectations in src/lib/parsing/__tests__/kindle-parser.test.ts
+(5 assertions) and audible-parser.test.ts (1 assertion). All 49 tests pass.
+
+BACKFILL MIGRATION
+------------------
+src/migrations/002_clean_titles.sql strips the trailing series paren from
+existing rows:
+
+    UPDATE books
+    SET title = regexp_replace(title, '\s*\([^()]+\)\s*$', '')
+    WHERE series IS NOT NULL
+      AND title ~ '\([^()]+\)\s*$';
+
+Apply with: psql "$DATABASE_URL" -f src/migrations/002_clean_titles.sql
+
+Caveat: uq_books_duplicate includes title. If two rows differ only in their
+series paren (same type/title-stem/authors/owner/purchase_date), the UPDATE
+will fail with a unique violation. Would need manual resolution if that happens.
+
+FILES TOUCHED
+-------------
+New:
+  src/app/theme-provider.tsx
+  src/app/theme-toggle.tsx
+  src/app/app-header.tsx
+  src/app/books/[id]/page.tsx
+  src/app/books/[id]/delete-button.tsx
+  src/migrations/002_clean_titles.sql
+
+Modified:
+  src/app/globals.css
+  src/app/layout.tsx
+  src/app/user-nav.tsx
+  src/app/login/page.tsx
+  src/app/books/page.tsx
+  src/app/books/new/page.tsx
+  src/app/books/[id]/edit/page.tsx
+  src/app/books/book-form.tsx
+  src/app/books/book-grid.tsx
+  src/app/books/pagination.tsx
+  src/app/purchases/import/page.tsx
+  src/lib/book-display.ts
+  src/lib/parsing/kindle-parser.ts
+  src/lib/parsing/audible-parser.ts
+  src/lib/parsing/__tests__/kindle-parser.test.ts
+  src/lib/parsing/__tests__/audible-parser.test.ts
+  package.json (next-themes)
+
+Deleted:
+  src/app/books/book-detail-modal.tsx
+
+KEY DECISIONS FOR FUTURE REFERENCE
+----------------------------------
+- Class-based dark variant via @custom-variant, not prefers-color-scheme
+  media query — required for manual toggle.
+- Semantic tokens in :root/.dark, Tailwind registration in @theme inline
+  (one block), palette scales already available from Tailwind v4 default.
+- AppHeader is the single source of truth for top-of-page nav. Pages render
+  their own <h1> in the body, not in a duplicated header.
+- /books/[id] is the action hub; no hover-only Edit on the grid (doesn't
+  work on mobile).
+- Primary vs. state colors: palette-tokenized for brand, hardcoded red/green
+  + dark: variants for state. User decision.
+- Backfill SQL is opt-in (per project convention); not applied automatically.
+
+====================================================================================
+SESSION CONTINUED — ASIN plumbing, dual scrapers, Audible enrichment flow
+====================================================================================
+
+GOALS
+-----
+1. Series text color tweak (italic, no red).
+2. Enrich Audible books with series + description (Amazon doesn't expose either
+   on the Audiobooks tab — scrape audible.com instead).
+3. Add ASIN to the schema as the join key. User intends a full re-import of
+   ~4000 books, so truncate is acceptable.
+4. Patch bookmarklets to capture ASIN end-to-end.
+5. Sync CLAUDE.md + SPEC.MD.
+
+STEP 7 — Series color + future-color note
+------------------------------------------
+- src/app/books/book-grid.tsx and src/app/books/[id]/page.tsx:
+    series line swapped from text-accent → italic text-foreground.
+- Saved a project memory noting the user plans a later sweep to replace
+  remaining bg-red/green/amber state utilities with CSS-var tokens.
+
+STEP 8 — ASIN as join key (design)
+----------------------------------
+ASIN = Amazon's 10-char product id. Embedded in the library DOM as:
+  • Amazon mycd:   content-image-{ASIN} / content-title-{ASIN} on container divs
+  • audible.com:   /pd/*-Audiobook/{ASIN} in cover/title anchors
+
+Column decision: books.asin TEXT, nullable, NO unique constraint.
+  • Shared books legitimately share an ASIN across both owner rows
+    (tverkon's row + dverkon's row of the same audiobook).
+  • Manually-entered books have no ASIN.
+  • Plain-text Kindle imports leave it null.
+Enrichment UPDATE filters book_type = 'AUDIBLE' AND asin = $N (owner-agnostic
+so both shared rows update in a single statement).
+
+STEP 9 — Schema change + migration 003
+--------------------------------------
+- src/migrations/001_create_tables.sql: added `asin TEXT,` after series (for
+  fresh installs).
+- src/migrations/003_truncate_and_add_asin.sql (new):
+      TRUNCATE TABLE books RESTART IDENTITY;
+      ALTER TABLE books ADD COLUMN IF NOT EXISTS asin TEXT;
+  User applied this against Neon.
+
+STEP 10 — Parsers capture ASIN
+------------------------------
+- kindle-parser.ts: parseKindleHtml reads id from the content-title-{ASIN}
+  wrapper. parseKindleText emits asin: null.
+- audible-parser.ts: parseAudibleHtml reads id from the content-image-{ASIN}
+  wrapper (that tab puts the stable id on the image wrapper, not the title).
+- ParsedBook type gained `asin: string | null`.
+- Zod importSchema in /api/import/route.ts picked up asin: z.string().nullable().
+- queries/books.ts: BookRow gained asin; getBooks, getBookById SELECTs updated;
+  insertBooks extended from 10 → 11 placeholders per row.
+
+Tests initially passed with zero edits — misleading: they use toMatchObject
+(partial match). Added explicit ASIN assertions to kindle-parser.test.ts and
+audible-parser.test.ts fixtures.
+
+STEP 11 — K-Scrape rewrite (hybrid stub)
+----------------------------------------
+Old K-Scrape selected title via [id^="content-title-"], which only matches
+Amazon's Books tab, not the Audiobooks tab — so Audible scraping was silently
+broken.
+
+Rewrote the bookmarklet to emit ONE hybrid stub per container that satisfies
+BOTH parsers simultaneously:
+  • Title wrapper carries BOTH id="content-title-{ASIN}" AND
+    class="digital_entity_title" (Kindle + Audible selectors).
+  • Adds a .digital_entity_details wrapper with ordered .information_row
+    children (author → date → owner) so Audible's sequential walk works.
+  • Dedup key unified on ASIN (extracted from content-image-{ASIN}).
+  • IndexedDB store: klScrape (separate from aScrape).
+Same blob can be pasted as Kindle HTML or Audible HTML; the parser choice on
+/purchases/import determines book_type.
+
+STEP 12 — A-Scrape bookmarklet (audible.com)
+--------------------------------------------
+New bookmarklet for audible.com/library/titles — the enrichment source.
+  • Selector: .adbl-library-content-row
+  • ASIN: /pd/*-Audiobook/{ASIN} href (fallback: input[data-asin])
+  • Fields: title (.bc-size-headline3), authors (anchors in .authorLabel),
+    series (seriesLabel anchor + "Books N" span), description
+    (.merchandisingSummary, whitespace collapsed).
+  • Emits:
+      <div class="kscrape-audible-enrich" data-asin="...">
+        <div class="kscrape-title">...</div>
+        <div class="kscrape-authors">...</div>
+        <div class="kscrape-series">...</div>       (optional)
+        <div class="kscrape-description">...</div>  (optional)
+      </div>
+  • IndexedDB store: aScrape (separate from K-Scrape so both coexist).
+
+STEP 13 — Enrichment parser + queries
+-------------------------------------
+- src/lib/parsing/audible-enrichment-parser.ts (new):
+  parseAudibleEnrichmentHtml(html) → AudibleEnrichment[]. Skips entries
+  missing data-asin or title. 6 unit tests.
+- queries/books.ts (new exports):
+    previewAudibleEnrichment(records) — SELECT by asin where book_type='AUDIBLE',
+      returns per-ASIN matched[] + proposed newSeries/newDescription. Shared
+      books surface both owners' rows under one ASIN.
+    applyAudibleEnrichment(records) — transactional per-record UPDATE. Dynamic
+      SET clause: non-null enrichment fields overwrite (blurb-wins), null
+      fields preserve existing column. WHERE book_type='AUDIBLE' AND asin=$N
+      (owner-agnostic — both shared rows update together).
+
+STEP 14 — /purchases/enrich page
+--------------------------------
+- src/app/purchases/enrich/actions.ts: previewEnrichmentAction +
+  applyEnrichmentAction server actions. node-html-parser runs server-side.
+- src/app/purchases/enrich/page.tsx: Client Component.
+    Paste textarea → Preview → matched/unmatched tables with counts
+    (matched ASINs, rows to update, unmatched) → Apply. Unmatched table
+    in amber surfaces ASINs with no corresponding Audible row (usually books
+    that were never imported).
+- AppHeader NAV_LINKS gained { href: "/purchases/enrich", label: "Enrich" }.
+- revalidatePath("/books") after apply.
+
+STEP 15 — Docs sync
+-------------------
+CLAUDE.md:
+  • Project structure: added purchases/enrich/ and audible-enrichment-parser.ts
+  • Database: new ASIN bullet explaining nullable + no-constraint rationale
+  • Migrations: added 003
+  • "Import via Bookmarklet" rewritten to cover both K-Scrape (hybrid stub)
+    and A-Scrape (enrichment)
+  • New "Enrichment flow" subsection
+
+SPEC.MD:
+  • Section 3.2: asin TEXT in DDL + "Key differences" bullet
+  • Section 5.1: folder structure (enrich/, audible-enrichment-parser.ts,
+    migration 003)
+  • Section 6.2: previewAudibleEnrichment / applyAudibleEnrichment bullets
+  • Section 8.4: asin: string | null on ParsedBook
+  • Section 8.7 (new): ASIN capture from container ids
+  • Section 8a (new): Enrichment Flow — UX, A-Scrape output shape, matching
+    semantics (ASIN-only, owner-agnostic, blurb-wins), server actions
+  • Section 13: migration 003
+  • Section 16: audible-enrichment-parser.test.ts
+  • Section 19: checked off ASIN column, K-Scrape rewrite, A-Scrape,
+    enrichment parser/queries/page, Enrich nav link
+
+DISCUSSION — import-page differentiation
+----------------------------------------
+User asked how to distinguish the three paste sources. Two pages, three sources:
+  • /purchases/import — Kindle HTML radio (K-Scrape on Books tab, parseKindleHtml,
+    book_type=KINDLE) and Audible HTML radio (K-Scrape on Audiobooks tab,
+    parseAudibleHtml, book_type=AUDIBLE). The radio fixes book_type; the hybrid
+    stub works with either parser.
+  • /purchases/enrich — A-Scrape from audible.com. Never inserts rows; only
+    updates series+description on existing AUDIBLE rows by ASIN. audible.com
+    doesn't carry purchase_date or owner, so it can't be an import source.
+Suggested label rename for clarity: "Amazon — Books tab" and "Amazon — Audiobooks
+tab" (deferred — "Audible HTML" reads ambiguously now that audible.com is also
+in play).
+
+FILES TOUCHED (continuation session)
+------------------------------------
+New:
+  src/migrations/003_truncate_and_add_asin.sql
+  src/lib/parsing/audible-enrichment-parser.ts
+  src/lib/parsing/__tests__/audible-enrichment-parser.test.ts
+  src/app/purchases/enrich/page.tsx
+  src/app/purchases/enrich/actions.ts
+  A-Scrape.js (readable source + single-line bookmarklet)
+
+Modified:
+  src/app/books/book-grid.tsx               (series color → italic text-foreground)
+  src/app/books/[id]/page.tsx               (same)
+  src/migrations/001_create_tables.sql      (asin column)
+  src/lib/parsing/kindle-parser.ts          (ASIN + ParsedBook type)
+  src/lib/parsing/audible-parser.ts         (ASIN extraction)
+  src/lib/parsing/__tests__/kindle-parser.test.ts   (ASIN assertions)
+  src/lib/parsing/__tests__/audible-parser.test.ts  (ASIN assertion)
+  src/lib/queries/books.ts                  (asin column + enrichment queries)
+  src/app/api/import/route.ts               (Zod asin field)
+  src/app/app-header.tsx                    (Enrich nav link)
+  K-Scrape.js                               (hybrid stub rewrite)
+  CLAUDE.md
+  SPEC.MD
+
+KEY DECISIONS
+-------------
+- asin is nullable, no unique constraint (shared books share ASIN by design).
+- Enrichment is ASIN-only and owner-agnostic — shared rows get the same
+  enrichment via a single UPDATE.
+- Blurb-wins: non-null enrichment overwrites; null enrichment preserves.
+- K-Scrape emits a hybrid stub so one bookmarklet covers both Amazon tabs;
+  audible.com needs its own scraper (A-Scrape) because the DOM is different
+  and it serves a different purpose (enrichment, not import).
+- Both bookmarklets use IndexedDB (klScrape vs aScrape) so they coexist.
+- Separated enrich flow as server actions (not an API route) to mirror the
+  CRUD pattern; node-html-parser must run server-side anyway.

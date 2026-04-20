@@ -11,6 +11,7 @@ CREATE TABLE books (
     owner              owner_enum NOT NULL,
     readers            TEXT NOT NULL DEFAULT 'tverkon|0|1,dverkon|0|1',
     series             TEXT,
+    asin               TEXT,
     authors            TEXT NOT NULL,
     sortable_title     TEXT NOT NULL,
     searchable_content TEXT NOT NULL,

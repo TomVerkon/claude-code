@@ -8,9 +8,9 @@ const TYPE_LABEL: Record<BookType, string> = {
 };
 
 const TYPE_BADGE: Record<BookType, string> = {
-  KINDLE: "bg-blue-100 text-blue-700",
-  AUDIBLE: "bg-orange-100 text-orange-700",
-  TECHNICAL: "bg-emerald-100 text-emerald-700",
+  KINDLE: "bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-200",
+  AUDIBLE: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200",
+  TECHNICAL: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200",
 };
 
 const TYPE_CARD_BG: Record<BookType, string> = {
@@ -37,11 +37,11 @@ export function typeLabel(v: string): string {
 }
 
 export function typeBadgeClass(v: string): string {
-  return isBookType(v) ? TYPE_BADGE[v] : "bg-gray-100 text-gray-700";
+  return isBookType(v) ? TYPE_BADGE[v] : "bg-muted text-muted-foreground";
 }
 
 export function typeCardBgClass(v: string): string {
-  return isBookType(v) ? TYPE_CARD_BG[v] : "bg-white";
+  return isBookType(v) ? TYPE_CARD_BG[v] : "bg-card";
 }
 
 export function ownerLabel(v: string): string {

@@ -53,6 +53,7 @@ describe("parseAudibleHtml", () => {
       authors: "Freida McFadden",
       owner: "dverkon",
       purchaseDate: "2026-03-11",
+      asin: "B0B62439N9",
     });
   });
 
@@ -125,7 +126,7 @@ describe("parseAudibleHtml", () => {
     }]);
 
     const books = parseAudibleHtml(html);
-    expect(books[0].title).toBe("Iron Gold (Red Rising Book 4)");
+    expect(books[0].title).toBe("Iron Gold");
     expect(books[0].series).toBe("Red Rising Book 4");
   });
 

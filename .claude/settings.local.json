@@ -3,7 +3,9 @@
     "allow": [
       "Bash(node:*)",
       "Bash(npx tsc:*)",
-      "Bash(npx tsx:*)"
+      "Bash(npx tsx:*)",
+      "Bash(npx jest *)",
+      "Bash(git add *)"
     ]
   }
 }

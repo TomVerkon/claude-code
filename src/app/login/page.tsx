@@ -42,9 +42,9 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <div className="w-full max-w-sm bg-white rounded-lg shadow p-8">
-        <h1 className="text-2xl font-bold text-gray-900 mb-6 text-center">
+    <main className="min-h-screen bg-muted flex items-center justify-center">
+      <div className="w-full max-w-sm bg-card border border-border rounded-lg shadow p-8">
+        <h1 className="text-2xl font-bold text-foreground mb-6 text-center">
           Family Books
         </h1>
 
@@ -77,13 +77,9 @@ export default function LoginPage() {
             />
           </div>
 
-          {error && <p className="text-red-600 text-sm">{error}</p>}
+          {error && <p className="text-red-600 dark:text-red-400 text-sm">{error}</p>}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-blue-600 text-white rounded px-4 py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-          >
+          <button type="submit" disabled={loading} className="btn-primary w-full">
             {loading ? 'Signing in...' : 'Sign in'}
           </button>
         </form>

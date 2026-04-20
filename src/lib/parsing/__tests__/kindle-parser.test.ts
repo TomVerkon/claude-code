@@ -21,13 +21,14 @@ Acquired by Denise A Verkon
     expect(books).toHaveLength(1);
     expect(books[0]).toMatchObject({
       bookType: "KINDLE",
-      title: "The Great Novel (Amazing Series Book 1)",
+      title: "The Great Novel",
       authors: "Jane Author",
       owner: "dverkon",
       purchaseDate: "2026-02-19",
       series: "Amazing Book 1",
       description: null,
       image: DEFAULT_IMAGE,
+      asin: null,
     });
   });
 
@@ -226,7 +227,7 @@ Acquired by Tom
 // ─── Title cleaning ─────────────────────────────────────────────────
 
 describe("title cleaning", () => {
-  it("strips description after colon, keeps series paren", () => {
+  it("strips description after colon and series paren", () => {
     const input = `
 Beasts in the Garden: A sci-fi novel (Convergence Book 1)
 C. Gockel
@@ -234,8 +235,9 @@ Acquired on January 18, 2026
 Acquired by Tom
     `;
     const books = parseKindleText(input);
-    expect(books[0].title).toBe("Beasts in the Garden (Convergence Book 1)");
+    expect(books[0].title).toBe("Beasts in the Garden");
     expect(books[0].description).toBe("A sci-fi novel");
+    expect(books[0].series).toBe("Convergence Book 1");
   });
 
   it("strips description with no series", () => {
@@ -262,7 +264,7 @@ Acquired by Denise
     expect(books[0].description).toBeNull();
   });
 
-  it("preserves title with series but no colon", () => {
+  it("strips series paren from title when no colon", () => {
     const input = `
 Story of My Life (Story Lake Book 1)
 Lucy Score
@@ -270,7 +272,8 @@ Acquired on February 19, 2026
 Acquired by Denise
     `;
     const books = parseKindleText(input);
-    expect(books[0].title).toBe("Story of My Life (Story Lake Book 1)");
+    expect(books[0].title).toBe("Story of My Life");
+    expect(books[0].series).toBe("Story Lake Book 1");
   });
 });
 
@@ -438,7 +441,7 @@ describe("parseKindleHtml", () => {
     expect(books).toHaveLength(1);
     expect(books[0]).toMatchObject({
       bookType: "KINDLE",
-      title: "The Great Novel (Amazing Series Book 1)",
+      title: "The Great Novel",
       authors: "Jane Author",
       owner: "dverkon",
       purchaseDate: "2026-03-06",
@@ -472,6 +475,12 @@ describe("parseKindleHtml", () => {
     expect(books).toHaveLength(2);
     expect(books[0].title).toBe("Book One");
     expect(books[1].title).toBe("Book Two");
+  });
+
+  it("extracts ASIN from the content-title id suffix", () => {
+    const html = makeBookHtml({ asin: "B0B62439N9" });
+    const books = parseKindleHtml(html);
+    expect(books[0].asin).toBe("B0B62439N9");
   });
 
   it("skips entries without title element", () => {
@@ -513,7 +522,7 @@ describe("parseKindleHtml", () => {
       title: "Beasts in the Garden: A sci-fi novel (Convergence Book 1)",
     });
     const books = parseKindleHtml(html);
-    expect(books[0].title).toBe("Beasts in the Garden (Convergence Book 1)");
+    expect(books[0].title).toBe("Beasts in the Garden");
     expect(books[0].description).toBe("A sci-fi novel");
     expect(books[0].series).toBe("Convergence Book 1");
   });

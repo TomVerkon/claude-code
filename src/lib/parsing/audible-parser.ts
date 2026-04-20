@@ -60,16 +60,18 @@ function extractDescription(title: string, series: string | null): string | null
 }
 
 function cleanTitle(rawTitle: string, series: string | null): string {
-  const colonIdx = rawTitle.indexOf(":");
-  if (colonIdx === -1) return rawTitle;
+  let cleaned = rawTitle;
 
-  const titlePart = rawTitle.substring(0, colonIdx).trim();
   if (series) {
-    const parenMatch = rawTitle.match(/(\([^()]*\))\s*$/);
-    if (parenMatch) return `${titlePart} ${parenMatch[1]}`;
+    cleaned = cleaned.replace(/\s*\([^()]*\)\s*$/, "");
   }
 
-  return titlePart;
+  const colonIdx = cleaned.indexOf(":");
+  if (colonIdx !== -1) {
+    cleaned = cleaned.substring(0, colonIdx);
+  }
+
+  return cleaned.trim();
 }
 
 function makeSortableTitle(title: string, series: string | null): string {
@@ -156,10 +158,12 @@ export function parseAudibleHtml(html: string): ParsedBook[] {
 
     if (!authors || !purchaseDate) continue;
 
-    // Image: div[id^="content-image-"] img
-    const imgEl = container.querySelector('[id^="content-image-"] img');
+    // Image: div[id^="content-image-"] img — the wrapper's id suffix is the ASIN
+    const imgWrapper = container.querySelector('[id^="content-image-"]');
+    const imgEl = imgWrapper?.querySelector("img");
     const rawImageUrl = imgEl?.getAttribute("src") ?? "";
     const image = rawImageUrl ? upgradeImageUrl(rawImageUrl) : DEFAULT_IMAGE;
+    const asin = imgWrapper?.getAttribute("id")?.replace(/^content-image-/, "") ?? null;
 
     const series = extractSeries(rawTitle);
     const description = extractDescription(rawTitle, series);
@@ -178,6 +182,7 @@ export function parseAudibleHtml(html: string): ParsedBook[] {
       sortableTitle,
       searchableContent,
       series,
+      asin: asin || null,
     });
   }
 

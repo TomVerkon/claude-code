@@ -11,36 +11,33 @@ export function Pagination({
 
   return (
     <nav className="flex items-center justify-center gap-1 mt-8 pb-8" aria-label="Pagination">
-      {/* Previous */}
       {page > 1 ? (
         <Link
           href={`/books?page=${page - 1}`}
-          className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          className="px-3 py-2 text-sm font-medium text-foreground bg-card border border-border rounded-lg hover:bg-muted transition-colors"
         >
           Prev
         </Link>
       ) : (
-        <span className="px-3 py-2 text-sm font-medium text-gray-300 bg-white border border-gray-200 rounded-lg cursor-not-allowed">
+        <span className="px-3 py-2 text-sm font-medium text-muted-foreground bg-card border border-border rounded-lg cursor-not-allowed opacity-50">
           Prev
         </span>
       )}
 
-      {/* Mobile: "Page X of Y" */}
-      <span className="sm:hidden px-3 py-2 text-sm text-gray-500">
+      <span className="sm:hidden px-3 py-2 text-sm text-muted-foreground">
         Page {page} of {totalPages}
       </span>
 
-      {/* Desktop: numbered pages */}
       <span className="hidden sm:contents">
         {pages.map((p, i) =>
           p === "..." ? (
-            <span key={`ellipsis-${i}`} className="px-2 py-2 text-sm text-gray-400">
+            <span key={`ellipsis-${i}`} className="px-2 py-2 text-sm text-muted-foreground">
               ...
             </span>
           ) : p === page ? (
             <span
               key={p}
-              className="px-3 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg min-w-[40px] text-center"
+              className="px-3 py-2 text-sm font-semibold text-accent-fg bg-accent rounded-lg min-w-10 text-center"
             >
               {p}
             </span>
@@ -48,7 +45,7 @@ export function Pagination({
             <Link
               key={p}
               href={`/books?page=${p}`}
-              className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors min-w-[40px] text-center"
+              className="px-3 py-2 text-sm font-medium text-foreground bg-card border border-border rounded-lg hover:bg-muted transition-colors min-w-10 text-center"
             >
               {p}
             </Link>
@@ -56,16 +53,15 @@ export function Pagination({
         )}
       </span>
 
-      {/* Next */}
       {page < totalPages ? (
         <Link
           href={`/books?page=${page + 1}`}
-          className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+          className="px-3 py-2 text-sm font-medium text-foreground bg-card border border-border rounded-lg hover:bg-muted transition-colors"
         >
           Next
         </Link>
       ) : (
-        <span className="px-3 py-2 text-sm font-medium text-gray-300 bg-white border border-gray-200 rounded-lg cursor-not-allowed">
+        <span className="px-3 py-2 text-sm font-medium text-muted-foreground bg-card border border-border rounded-lg cursor-not-allowed opacity-50">
           Next
         </span>
       )}
@@ -84,14 +80,12 @@ function getPageNumbers(current: number, total: number): (number | "...")[] {
 
   const pages: (number | "...")[] = [];
 
-  // Always show page 1
   pages.push(1);
 
   if (current > 3) {
     pages.push("...");
   }
 
-  // Window around current
   const start = Math.max(2, current - 1);
   const end = Math.min(total - 1, current + 1);
   for (let i = start; i <= end; i++) {
@@ -102,7 +96,6 @@ function getPageNumbers(current: number, total: number): (number | "...")[] {
     pages.push("...");
   }
 
-  // Always show last page
   pages.push(total);
 
   return pages;
